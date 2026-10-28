@@ -1,0 +1,246 @@
+name: release
+
+# Tag-triggered release (git tag v0.3.1 && git push origin v0.3.1), or run manually from the Actions tab.
+#   test    -> build (windows, macos, linux: game client + launcher installers, signed when secrets exist)
+#           -> publish (make-release, upload to dl.swordandseal.com, draft GitHub Release)
+# Without signing secrets everything still builds and publishes UNSIGNED; launcher/latest.json then says "signed": false.
+# Secrets are referenced only in the steps that sign or publish. Nothing here runs on pull requests (see ci.yml).
+# Owner setup: docs/SIGNING.md and docs/RELEASING.md.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tag must match VERSION
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: test "${GITHUB_REF_NAME}" = "v$(cat VERSION)" || { echo "tag ${GITHUB_REF_NAME} != v$(cat VERSION)"; exit 1; }
+      - run: npm ci
+        working-directory: server
+      - name: Server typecheck and tests
+        run: |
+          npm run typecheck
+          npm test
+        working-directory: server
+      - run: npm ci
+        working-directory: client
+      - name: Client typecheck and English check
+        run: |
+          npm run typecheck
+          npm run check:english
+        working-directory: client
+      - name: Launcher and release tooling tests
+        run: |
+          (cd launcher && node --test "test/*.test.mjs")
+          node --test test/publish-release.test.mjs
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            id: win
+            builder_flag: --win
+            game_targets: nsis portable dir
+          - os: macos-latest
+            id: mac
+            builder_flag: --mac
+            game_targets: dmg zip
+          - os: ubuntu-latest
+            id: linux
+            builder_flag: --linux
+            game_targets: AppImage dir
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          (cd server && npm ci)
+          (cd client && npm ci)
+          (cd launcher && npm install --no-audit --no-fund)
+
+      - name: Build game client and server bundle
+        run: |
+          npm run build
+          node ../scripts/build-server.mjs
+        working-directory: client
+
+      # ---- macOS only: put the notarization key (a secret) in a temp file ----
+      - name: Prepare notarization key (macOS)
+        if: matrix.id == 'mac'
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+            echo "APPLE_API_KEY=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
+          fi
+
+      # ---- build + sign: secrets are visible to these two steps only ----
+      - name: Build and sign the game client (${{ matrix.id }})
+        run: npx electron-builder --config electron-builder.config.cjs ${{ matrix.builder_flag }} ${{ matrix.game_targets }} --publish never
+        working-directory: client
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # Windows: Azure Trusted/Artifact Signing, or a PFX. macOS: Developer ID + notarization.
+          AZURE_TENANT_ID: ${{ matrix.id == 'win' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ matrix.id == 'win' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ matrix.id == 'win' && secrets.AZURE_CLIENT_SECRET || '' }}
+          AZURE_CODESIGN_ENDPOINT: ${{ matrix.id == 'win' && secrets.AZURE_CODESIGN_ENDPOINT || '' }}
+          AZURE_CODESIGN_ACCOUNT: ${{ matrix.id == 'win' && secrets.AZURE_CODESIGN_ACCOUNT || '' }}
+          AZURE_CODESIGN_PROFILE: ${{ matrix.id == 'win' && secrets.AZURE_CODESIGN_PROFILE || '' }}
+          AZURE_CODESIGN_PUBLISHER: ${{ matrix.id == 'win' && secrets.AZURE_CODESIGN_PUBLISHER || '' }}
+          CSC_LINK: ${{ matrix.id == 'win' && secrets.WIN_CSC_LINK || matrix.id == 'mac' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.id == 'win' && secrets.WIN_CSC_KEY_PASSWORD || matrix.id == 'mac' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_API_KEY_ID: ${{ matrix.id == 'mac' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ matrix.id == 'mac' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_ID: ${{ matrix.id == 'mac' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.id == 'mac' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.id == 'mac' && secrets.APPLE_TEAM_ID || '' }}
+
+      - name: Build and sign the launcher installers (${{ matrix.id }})
+        run: npx electron-builder --config electron-builder.config.cjs ${{ matrix.builder_flag }} --publish never
+        working-directory: launcher
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          AZURE_TENANT_ID: ${{ matrix.id == 'win' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ matrix.id == 'win' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ matrix.id == 'win' && secrets.AZURE_CLIENT_SECRET || '' }}
+          AZURE_CODESIGN_ENDPOINT: ${{ matrix.id == 'win' && secrets.AZURE_CODESIGN_ENDPOINT || '' }}
+          AZURE_CODESIGN_ACCOUNT: ${{ matrix.id == 'win' && secrets.AZURE_CODESIGN_ACCOUNT || '' }}
+          AZURE_CODESIGN_PROFILE: ${{ matrix.id == 'win' && secrets.AZURE_CODESIGN_PROFILE || '' }}
+          AZURE_CODESIGN_PUBLISHER: ${{ matrix.id == 'win' && secrets.AZURE_CODESIGN_PUBLISHER || '' }}
+          CSC_LINK: ${{ matrix.id == 'win' && secrets.WIN_CSC_LINK || matrix.id == 'mac' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.id == 'win' && secrets.WIN_CSC_KEY_PASSWORD || matrix.id == 'mac' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_API_KEY_ID: ${{ matrix.id == 'mac' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ matrix.id == 'mac' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_ID: ${{ matrix.id == 'mac' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.id == 'mac' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.id == 'mac' && secrets.APPLE_TEAM_ID || '' }}
+
+      - name: Remove notarization key
+        if: always() && matrix.id == 'mac'
+        run: rm -f "$RUNNER_TEMP/AuthKey.p8"
+
+      - name: Verify signatures (no secrets)
+        run: |
+          mkdir -p out
+          node scripts/verify-signatures.mjs --os "${{ matrix.id }}" --dir launcher/dist --out "out/signing-${{ matrix.id }}.json"
+          node scripts/verify-signatures.mjs --os "${{ matrix.id }}" --dir client/release --out "out/signing-game-${{ matrix.id }}.json"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out/launcher out/game
+          cp launcher/dist/*.exe launcher/dist/*.dmg launcher/dist/*.zip launcher/dist/*.AppImage launcher/dist/*.yml launcher/dist/*.blockmap out/launcher/ 2>/dev/null || true
+          cp client/release/*.exe client/release/*.dmg client/release/*.zip client/release/*.AppImage out/game/ 2>/dev/null || true
+          # unpacked game folders go through the launcher; tar keeps the executable bits that upload-artifact would drop
+          if [ -d client/release/win-unpacked ]; then tar -C client/release -cf out/game-unpacked-win32.tar win-unpacked; fi
+          if [ -d client/release/linux-unpacked ]; then tar -C client/release -cf out/game-unpacked-linux.tar linux-unpacked; fi
+          ls -la out out/launcher out/game
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.id }}
+          path: out
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release   # optional: add required reviewers (GitHub > Settings > Environments)
+    permissions:
+      contents: write   # create the draft GitHub Release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
+          path: artifacts
+
+      - name: Assemble inputs
+        run: |
+          mkdir -p launcher-in game-in reports
+          cp artifacts/build-*/launcher/* launcher-in/
+          cp artifacts/build-*/game/* game-in/ 2>/dev/null || true
+          cp artifacts/build-*/signing-*.json reports/
+          mkdir -p unpacked
+          tar -C unpacked -xf artifacts/build-win/game-unpacked-win32.tar
+          tar -C unpacked -xf artifacts/build-linux/game-unpacked-linux.tar
+          ls -la launcher-in game-in unpacked
+
+      - name: Checksums
+        run: |
+          (cd launcher-in && sha256sum *.exe *.dmg *.zip *.AppImage > SHA256SUMS)
+          cat launcher-in/SHA256SUMS
+
+      - name: GPG-sign the checksums (only when GPG_PRIVATE_KEY is set)
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then echo "no GPG key: SHA256SUMS stays unsigned"; exit 0; fi
+          printf '%s' "$GPG_PRIVATE_KEY" | base64 --decode | gpg --batch --import
+          gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --armor --detach-sign -o launcher-in/SHA256SUMS.asc launcher-in/SHA256SUMS
+      - name: Verify the Linux signature record (no secrets)
+        run: node scripts/verify-signatures.mjs --os linux --dir launcher-in --out reports/signing-linux.json
+
+      - name: Package the game and build the release folder
+        run: |
+          npm ci --prefix server
+          npm ci --prefix client
+          node scripts/package.mjs
+          node scripts/make-release.mjs --skip-package --gzip --out release \
+            --electron-win32 unpacked/win-unpacked \
+            --electron-linux unpacked/linux-unpacked \
+            --launcher-dir launcher-in --signing-report reports --launcher-checksums launcher-in
+          cat release/launcher/latest.json
+
+      - name: Publish dry run
+        run: node scripts/publish-release.mjs --dir release --dry-run
+
+      - name: Publish to dl.swordandseal.com
+        env:
+          DL_ADMIN_TOKEN: ${{ secrets.DL_ADMIN_TOKEN }}
+        run: |
+          test -n "$DL_ADMIN_TOKEN" || { echo "Repository secret DL_ADMIN_TOKEN is not set"; exit 1; }
+          node scripts/publish-release.mjs --dir release --keep 5
+
+      - name: Draft GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --title "Sword and Seal $GITHUB_REF_NAME" --generate-notes \
+            launcher-in/*.exe launcher-in/*.dmg launcher-in/*.zip launcher-in/*.AppImage launcher-in/SHA256SUMS* \
+            $(ls game-in/* 2>/dev/null)

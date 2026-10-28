@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Hardened Runtime exceptions for an Electron app. Each one is justified; add nothing else without a reason. -->
+
+  <!-- Chromium's V8 JavaScript engine compiles JS to machine code at run time (JIT). Without this the renderer and
+       main process crash at launch under the hardened runtime. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+
+  <!-- V8 and Chromium also need writable+executable memory pages (WebAssembly, JIT code caches). Required for Electron
+       to run with the hardened runtime. -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <!-- Outgoing connections: the launcher talks to the account API (play.swordandseal.com) and downloads game files from
+       dl.swordandseal.com. This key only has an effect inside the App Sandbox (which Developer ID builds do not use), but it
+       documents intent and keeps the app working if the sandbox is ever enabled. -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+</dict>
+</plist>

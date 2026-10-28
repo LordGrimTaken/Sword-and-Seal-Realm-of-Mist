@@ -1,0 +1,28 @@
+{
+  "siteName": "Sword and Seal",
+  "siteTitle": "Sword & Seal: Realm of Mist",
+  "origin": "https://swordandseal.com",
+  "wwwHost": "www.swordandseal.com",
+  "tagline": "Draw your blade. Press your seal. Walk into the mist.",
+  "supportEmail": "support@xianwuligroup.com",
+  "supportEmailIsPlaceholder": false,
+  "contactTodo": "TODO-config: confirm the support mailbox exists and who answers it before launch.",
+  "downloads": {
+    "base": "https://dl.swordandseal.com/launcher/latest",
+    "latestJson": "https://dl.swordandseal.com/launcher/latest.json",
+    "files": {
+      "win": "SwordAndSeal-Launcher-Setup.exe",
+      "mac": "SwordAndSeal-Launcher.dmg",
+      "linux": "SwordAndSeal-Launcher.AppImage"
+    },
+    "labels": {
+      "win": "Windows installer (.exe)",
+      "mac": "macOS disk image (.dmg)",
+      "linux": "Linux AppImage"
+    }
+  },
+  "newsUrl": "https://dl.swordandseal.com/news.json",
+  "healthUrl": "https://play.swordandseal.com/health",
+  "lastUpdated": "2026-10-28",
+  "gameVersionFile": "../VERSION"
+}

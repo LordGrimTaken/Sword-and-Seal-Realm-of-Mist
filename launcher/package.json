@@ -1,0 +1,26 @@
+{
+  "name": "sword-and-seal-launcher",
+  "productName": "Sword and Seal Launcher",
+  "version": "1.0.0",
+  "description": "Launcher for Sword and Seal: Realm of Mist (login, patching, news, server status)",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "author": {
+    "name": "Sword and Seal",
+    "email": "noreply@swordandseal.com"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dev": "node scripts/dev.mjs",
+    "dev-host": "node scripts/dev-host.mjs",
+    "cli": "node scripts/cli.mjs",
+    "test": "node --test \"test/*.test.mjs\"",
+    "dist": "electron-builder --config electron-builder.config.cjs",
+    "dist:dir": "electron-builder --config electron-builder.config.cjs --dir"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}

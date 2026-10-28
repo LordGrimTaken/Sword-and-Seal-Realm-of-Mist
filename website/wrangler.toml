@@ -1,0 +1,12 @@
+# Reference config for deploying the site Worker. No secrets here.
+# Build first: node website/build.mjs   then from website/: npx wrangler deploy
+name = "swordandseal-website"
+main = "dist-worker/worker.mjs"
+compatibility_date = "2026-10-01"
+
+# Cloudflare zone swordandseal.com (apex + www; the Worker redirects www -> apex).
+routes = [
+  { pattern = "swordandseal.com/*", zone_name = "swordandseal.com" },
+  { pattern = "www.swordandseal.com/*", zone_name = "swordandseal.com" },
+]
+# www needs a proxied (orange-cloud) DNS record, e.g. AAAA 100:: , for the route to fire.

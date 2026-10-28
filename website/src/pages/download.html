@@ -1,0 +1,171 @@
+<!--meta {"title":"Download the Launcher | Sword & Seal: Realm of Mist","description":"Download the Sword & Seal launcher for Windows, macOS or Linux. Step-by-step install guide, system requirements, SmartScreen and Gatekeeper notes for unsigned preview builds, and checksum verification.","priority":0.9,"nav":"download","scripts":["download"]} -->
+<header class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Free preview</p>
+    <h1>Download the Launcher</h1>
+    <p class="lede">One small launcher signs you in, installs the game, keeps it up to date and shows the latest news. Install it once, then press Play.</p>
+    <p id="os-detected" class="muted" aria-live="polite">Pick the download for your system below.</p>
+  </div>
+</header>
+
+<section class="section" id="release" data-release-state="loading" aria-labelledby="get-title">
+  <div class="wrap">
+    <h2 id="get-title" class="sr-only">Choose your download</h2>
+
+    <div class="release-bar" aria-live="polite">
+      <strong id="release-version">Checking for the latest build</strong>
+      <span id="release-date" class="muted"></span>
+    </div>
+    <div class="callout soon" role="status">
+      <h4>First public build coming soon</h4>
+      <p>No launcher has been published yet, so the buttons below are switched off. This page checks for a release every time you open it and will light up the right download the moment one exists. To be told when it does: bookmark this page, or watch the <a href="/news">news page</a> (no email list, no tracking).</p>
+    </div>
+
+    <div class="dl-grid" id="dl-grid">
+      <article class="dl-card" data-os="win">
+        <span class="recommended">Recommended for you</span>
+        <svg class="os-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.5 4.5v7H3zM11.5 4.4 21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.4z"/></svg>
+        <h3>Windows</h3>
+        <p class="muted">Windows 10 or 11, 64-bit. Guided installer.</p>
+        <a class="btn" data-dl="win" href="{{cfg.downloads.base}}/{{cfg.downloads.files.win}}"><span data-dl-label>Download installer</span></a>
+        <ul class="dl-meta"><li><span>File</span><span>{{cfg.downloads.files.win}}</span></li><li><span>Size</span><span data-meta="win-size">Checking...</span></li><li><span>SHA-256</span><span class="hash" data-meta="win-sha">Checking...</span></li></ul>
+      </article>
+      <article class="dl-card" data-os="mac">
+        <span class="recommended">Recommended for you</span>
+        <svg class="os-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 12.6c0-2.2 1.8-3.2 1.9-3.3-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.6.8-3.3.8-.7 0-1.7-.8-2.8-.8-1.4 0-2.8.9-3.5 2.2-1.5 2.6-.4 6.4 1.1 8.5.7 1 1.6 2.2 2.7 2.1 1.1 0 1.5-.7 2.8-.7s1.7.7 2.8.7c1.2 0 1.9-1 2.6-2.1.8-1.2 1.2-2.3 1.2-2.4-.1 0-2.3-.9-2.3-3.3zM14.3 6.2c.6-.7 1-1.7.9-2.7-.9 0-1.9.6-2.5 1.3-.6.6-1 1.6-.9 2.6 1 .1 1.9-.5 2.5-1.2z"/></svg>
+        <h3>macOS</h3>
+        <p class="muted">macOS 11 or newer. Apple Silicon and Intel.</p>
+        <a class="btn" data-dl="mac" href="{{cfg.downloads.base}}/{{cfg.downloads.files.mac}}"><span data-dl-label>Download disk image</span></a>
+        <ul class="dl-meta"><li><span>File</span><span>{{cfg.downloads.files.mac}}</span></li><li><span>Size</span><span data-meta="mac-size">Checking...</span></li><li><span>SHA-256</span><span class="hash" data-meta="mac-sha">Checking...</span></li></ul>
+        <p class="muted small-note" data-extra-note hidden>This release also has separate builds:
+          <a data-extra="mac_arm64" href="#" hidden>Apple Silicon (arm64)</a> <a data-extra="mac_x64" href="#" hidden>Intel (x64)</a></p>
+      </article>
+      <article class="dl-card" data-os="linux">
+        <span class="recommended">Recommended for you</span>
+        <svg class="os-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c-2.4 0-3.4 2-3.4 4.2 0 1.6-.6 2.6-1.6 4.1C5.8 13 5 14.6 5 16.3c0 1.5 1 2.3 2.3 2.7.5 1.2 1.6 2 2.7 2h4c1.1 0 2.2-.8 2.7-2 1.3-.4 2.3-1.2 2.3-2.7 0-1.7-.8-3.3-2-5-1-1.5-1.6-2.5-1.6-4.1C15.4 5 14.4 3 12 3z"/><path d="M10 8.5h.01M14 8.5h.01M10.5 11.5c.9.6 2.1.6 3 0"/></svg>
+        <h3>Linux</h3>
+        <p class="muted">64-bit, glibc 2.31 or newer. Portable AppImage.</p>
+        <a class="btn" data-dl="linux" href="{{cfg.downloads.base}}/{{cfg.downloads.files.linux}}"><span data-dl-label>Download AppImage</span></a>
+        <ul class="dl-meta"><li><span>File</span><span>{{cfg.downloads.files.linux}}</span></li><li><span>Size</span><span data-meta="linux-size">Checking...</span></li><li><span>SHA-256</span><span class="hash" data-meta="linux-sha">Checking...</span></li></ul>
+      </article>
+    </div>
+
+    <div class="callout warn">
+      <h4>Preview build, unsigned</h4>
+      <p>These are early preview builds. The installers are not yet code-signed, so Windows and macOS will show a warning the first time you open them (see <a href="#trust">What your computer will say</a>). Only download from this page or from <code>dl.swordandseal.com</code>, and verify the checksum if you want to be certain.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section alt" aria-labelledby="install-title">
+  <div class="wrap">
+    <div class="section-head"><p class="eyebrow">Install guide</p><h2 id="install-title">Three steps to the valley</h2></div>
+    <ol class="steps">
+      <li><h3>Install the launcher</h3><p>Run the Windows installer, open the macOS disk image and drag the launcher into Applications, or mark the Linux AppImage as executable and run it.</p></li>
+      <li><h3>Sign in and update</h3><p>Create an account or sign in. The launcher then downloads the game files, checks every file against a checksum, and resumes if your connection drops. First install is the largest download; updates only fetch what changed.</p></li>
+      <li><h3>Press Play</h3><p>Pick your character name and class on the login scroll and enter the world. The launcher hands the game a one-time login token, so your password never goes into the game window.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="does-title">
+  <div class="wrap split">
+    <div>
+      <p class="eyebrow">What the launcher does</p>
+      <h2 id="does-title">Small, boring, reliable</h2>
+      <ul>
+        <li><strong>Signs you in</strong> against the account service and issues a one-time token for the game.</li>
+        <li><strong>Installs and patches</strong> the game from the download server, verifying a SHA-256 checksum for every file.</li>
+        <li><strong>Resumes</strong> interrupted downloads and repairs damaged files.</li>
+        <li><strong>Shows server status and news</strong>, including the same notices as the <a href="/news">news page</a>.</li>
+        <li><strong>Starts the game</strong> in its own window. Nothing is installed outside the folder you choose, except the launcher's own settings.</li>
+      </ul>
+    </div>
+    <figure class="scroll">
+      <div class="frame"><img src="{{asset:img/login.webp}}" width="680" height="680" loading="lazy" alt="The game's login scroll: a character name field, three class cards for Sword Cultivator, Talisman Master and Physician, and an Enter the World button."></div>
+      <figcaption><strong>What you will see next</strong>The in-game login scroll that opens after the launcher.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="section alt" aria-labelledby="req-title">
+  <div class="wrap">
+    <div class="section-head"><p class="eyebrow">System requirements</p><h2 id="req-title">What you need</h2>
+      <p class="muted">Target requirements for the preview. <span class="todo">TODO-config: confirm after the first public build is tested on each OS</span></p></div>
+    <div class="table-wrap">
+      <table>
+        <caption class="sr-only">System requirements</caption>
+        <thead><tr><th scope="col">Component</th><th scope="col">Minimum</th><th scope="col">Recommended</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Operating system</th><td>Windows 10 64-bit, macOS 11, or a 64-bit Linux with glibc 2.31 (Ubuntu 20.04 or similar)</td><td>Windows 11, current macOS, or a current Linux desktop</td></tr>
+          <tr><th scope="row">Processor</th><td>Dual-core, 2 GHz</td><td>Quad-core, 3 GHz</td></tr>
+          <tr><th scope="row">Memory</th><td>4 GB</td><td>8 GB</td></tr>
+          <tr><th scope="row">Graphics</th><td>Any GPU with WebGL 2 and hardware acceleration on</td><td>A dedicated or recent integrated GPU with current drivers</td></tr>
+          <tr><th scope="row">Storage</th><td>About 1 GB free for launcher and game files</td><td>2 GB free</td></tr>
+          <tr><th scope="row">Network</th><td>Broadband. Outbound HTTPS (port 443) to <code>dl.swordandseal.com</code> and <code>play.swordandseal.com</code>, including secure WebSocket</td><td>Wired or stable Wi-Fi, low latency</td></tr>
+          <tr><th scope="row">Linux extras</th><td>FUSE 2 (<code>libfuse2</code>) to run an AppImage</td><td>-</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="trust" aria-labelledby="trust-title">
+  <div class="wrap">
+    <div class="section-head"><p class="eyebrow">Unsigned preview builds</p><h2 id="trust-title">What your computer will say</h2>
+      <p class="lede">Code-signing certificates are on the way. Until signing is live, your operating system cannot recognise the publisher and will warn you. That warning is expected for these builds. If the file you hold does not match the checksum below, do not run it.</p></div>
+    <div class="two-col">
+      <div class="callout">
+        <h4>Windows SmartScreen</h4>
+        <p>You may see "Windows protected your PC". Choose <strong>More info</strong>, check that the file name is <code>{{cfg.downloads.files.win}}</code>, then choose <strong>Run anyway</strong>. Your browser may also ask you to confirm that you want to keep the download.</p>
+      </div>
+      <div class="callout">
+        <h4>macOS Gatekeeper</h4>
+        <p>macOS may say the app "cannot be opened because the developer cannot be verified". Open the disk image, then <strong>Control-click (or right-click) the launcher and choose Open</strong>, then Open again. If that option is missing, go to <strong>System Settings, Privacy &amp; Security</strong>, scroll down and choose <strong>Open Anyway</strong>.</p>
+      </div>
+      <div class="callout">
+        <h4>Linux</h4>
+        <p>Mark the AppImage as executable, either in your file manager's properties or with <code>chmod +x {{cfg.downloads.files.linux}}</code>, then run it. If it does not start, install <code>libfuse2</code>.</p>
+      </div>
+      <div class="callout jade">
+        <h4>Why trust it?</h4>
+        <p>The launcher is served only from <code>dl.swordandseal.com</code> over HTTPS, publishes its SHA-256 here, and never asks for anything beyond your game account. Signing removes the warning; it does not change what the software does.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt" aria-labelledby="sum-title">
+  <div class="wrap">
+    <div class="section-head"><p class="eyebrow">Verify your download</p><h2 id="sum-title">Check the SHA-256</h2>
+      <p class="lede">Compare the hash your computer calculates with the one listed for your file above. They must match exactly.</p></div>
+    <div class="tabs" role="tablist" aria-label="Operating system">
+      <button type="button" role="tab" id="tab-win" aria-selected="true" aria-controls="panel-win" data-os-tab="win">Windows</button>
+      <button type="button" role="tab" id="tab-mac" aria-selected="false" tabindex="-1" aria-controls="panel-mac" data-os-tab="mac">macOS</button>
+      <button type="button" role="tab" id="tab-linux" aria-selected="false" tabindex="-1" aria-controls="panel-linux" data-os-tab="linux">Linux</button>
+    </div>
+    <div role="tabpanel" id="panel-win" aria-labelledby="tab-win" data-os-panel="win">
+      <p>Open PowerShell in your Downloads folder:</p>
+      <pre><code>Get-FileHash .\<span data-sha-file="win">{{cfg.downloads.files.win}}</span> -Algorithm SHA256</code></pre>
+      <p class="muted">Expected: <code data-sha-value="win">published with each release</code></p>
+    </div>
+    <div role="tabpanel" id="panel-mac" aria-labelledby="tab-mac" data-os-panel="mac" hidden>
+      <p>Open Terminal in your Downloads folder:</p>
+      <pre><code>shasum -a 256 <span data-sha-file="mac">{{cfg.downloads.files.mac}}</span></code></pre>
+      <p class="muted">Expected: <code data-sha-value="mac">published with each release</code></p>
+    </div>
+    <div role="tabpanel" id="panel-linux" aria-labelledby="tab-linux" data-os-panel="linux" hidden>
+      <p>In a terminal in your Downloads folder:</p>
+      <pre><code>sha256sum <span data-sha-file="linux">{{cfg.downloads.files.linux}}</span></code></pre>
+      <p class="muted">Expected: <code data-sha-value="linux">published with each release</code></p>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="help-title">
+  <div class="wrap center">
+    <h2 id="help-title">Trouble installing?</h2>
+    <p class="lede mx-auto">See the launcher troubleshooting answers on the support page, or write to <a href="mailto:{{cfg.supportEmail}}">{{cfg.supportEmail}}</a>.</p>
+    <p><a class="btn ghost" href="/support#launcher">Launcher help</a></p>
+  </div>
+</section>

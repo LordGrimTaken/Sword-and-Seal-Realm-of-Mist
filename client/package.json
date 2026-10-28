@@ -1,0 +1,44 @@
+{
+  "name": "jiuzhou-client",
+  "version": "0.3.0",
+  "description": "JIUZHOU desktop client",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "author": {
+    "name": "Jiuzhou",
+    "email": "noreply@swordandseal.com"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "dist": "npm run build && node ../scripts/build-server.mjs && electron-builder --config electron-builder.config.cjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test:ui": "node scripts/ui-test.mjs",
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:audio": "node scripts/audio-selftest.mjs",
+    "test:boss": "node scripts/boss-test.mjs",
+    "test:desktop": "node scripts/desktop-server-test.mjs",
+    "check:english": "node scripts/check-english.mjs",
+    "builder": "electron-builder --config electron-builder.config.cjs"
+  },
+  "dependencies": {
+    "@fontsource/ma-shan-zheng": "^5.0.0",
+    "@fontsource/noto-serif": "^5.3.0",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/three": "^0.170.0",
+    "electron": "^37.0.0",
+    "electron-builder": "^25.0.0",
+    "esbuild": "^0.21.5",
+    "eslint": "^9.39.5",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^5.4.0"
+  }
+}

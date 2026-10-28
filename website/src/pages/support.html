@@ -1,0 +1,70 @@
+<!--meta {"title":"Support and FAQ | Sword & Seal: Realm of Mist","description":"Help for Sword & Seal: accounts, passwords, launcher problems, network ports, controls and how to report a bug.","priority":0.7,"nav":"support"} -->
+<header class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Help</p>
+    <h1>Support and FAQ</h1>
+    <p class="lede">Most problems are one of a handful of things. Start here; if you are still stuck, write to us.</p>
+    <p><strong>Contact:</strong> <a href="mailto:{{cfg.supportEmail}}">{{cfg.supportEmail}}</a></p>
+  </div>
+</header>
+
+<section class="section">
+  <div class="wrap prose">
+    <div class="faq-group" id="accounts">
+      <h2>Accounts and passwords</h2>
+      <details class="faq"><summary>How do I create an account?</summary><div class="answer"><p>Open the launcher and choose to create an account. You need an account name and a password. Your account name is separate from your character names, which you pick later on the in-game login scroll.</p></div></details>
+      <details class="faq"><summary>I forgot my password</summary><div class="answer"><p>Email <a href="mailto:{{cfg.supportEmail}}">{{cfg.supportEmail}}</a> from the address you can prove belongs to you, with your account name. <span class="todo">TODO-config: replace with the self-service reset flow when it exists</span></p><p>We cannot read your password. It is stored only as a salted hash, so it can be reset but never recovered.</p></div></details>
+      <details class="faq"><summary>Is my password safe?</summary><div class="answer"><p>Passwords are hashed on the server and are never stored in plain text. The launcher exchanges your sign-in for a one-time token; the game window never sees your password. Use a password you do not use elsewhere.</p></div></details>
+      <details class="faq"><summary>Can I delete my account and data?</summary><div class="answer"><p>Yes. Email us from your account address and we will delete the account and its characters. See the <a href="/privacy">privacy policy</a> for what is stored.</p></div></details>
+    </div>
+
+    <div class="faq-group" id="launcher">
+      <h2>Launcher problems</h2>
+      <details class="faq"><summary>Windows says "Windows protected your PC"</summary><div class="answer"><p>Preview builds are not code-signed yet. Choose <strong>More info</strong>, then <strong>Run anyway</strong>. Details and checksum steps are on the <a href="/download#trust">download page</a>.</p></div></details>
+      <details class="faq"><summary>macOS says the developer cannot be verified</summary><div class="answer"><p>Control-click the launcher, choose <strong>Open</strong>, and confirm. Or use <strong>System Settings, Privacy &amp; Security, Open Anyway</strong>.</p></div></details>
+      <details class="faq"><summary>The Linux AppImage does not start</summary><div class="answer"><p>Make it executable (<code>chmod +x</code>) and install <code>libfuse2</code>. If you run it from a terminal, copy any error text into your bug report.</p></div></details>
+      <details class="faq"><summary>The download or update stalls or fails</summary><div class="answer"><p>The launcher resumes where it stopped, so close it and open it again first. Every file is checked against a SHA-256 checksum, and a damaged file is fetched again. If it keeps failing, check your disk space and any antivirus or proxy software that rewrites downloads.</p></div></details>
+      <details class="faq"><summary>"Launcher update required"</summary><div class="answer"><p>The game needs a newer launcher than you have. Download the latest from the <a href="/download">download page</a> and install it over the old one.</p></div></details>
+      <details class="faq"><summary>The game window is black or runs slowly</summary><div class="answer"><p>Turn on hardware acceleration and update your graphics drivers. In the game, press <kbd>F1</kbd> to open help and settings, where a performance mode renders at lower resolution.</p></div></details>
+    </div>
+
+    <div class="faq-group" id="network">
+      <h2>Network and ports</h2>
+      <details class="faq"><summary>Which ports and servers does it use?</summary><div class="answer"><p>Everything goes over outbound HTTPS on port 443: downloads from <code>dl.swordandseal.com</code>, the account service and secure WebSocket game connection on <code>play.swordandseal.com</code>. You do not need to open or forward any ports at home.</p></div></details>
+      <details class="faq"><summary>It cannot connect on my school or work network</summary><div class="answer"><p>Some networks block WebSocket traffic or unknown domains. Try another network or ask the network owner to allow the two domains above. The status badge at the top of every page shows whether the servers are up.</p></div></details>
+      <details class="faq"><summary>The badge says "Servers offline"</summary><div class="answer"><p>The badge asks the game server for a heartbeat every minute. If it says offline, the servers may be down for maintenance, or your network is blocking the request. Check the <a href="/news">news page</a> for announcements.</p></div></details>
+    </div>
+
+    <div class="faq-group" id="play">
+      <h2>Playing</h2>
+      <details class="faq"><summary>What are the controls?</summary><div class="answer">
+        <div class="table-wrap"><table><thead><tr><th scope="col">Key</th><th scope="col">Action</th></tr></thead><tbody>
+          <tr><td><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></td><td>Move, relative to the camera</td></tr>
+          <tr><td>Right-drag, wheel</td><td>Orbit and zoom the camera</td></tr>
+          <tr><td>Left click</td><td>Select a target, or click an NPC to talk</td></tr>
+          <tr><td><kbd>Tab</kbd></td><td>Cycle the nearest hostile target</td></tr>
+          <tr><td><kbd>1</kbd> to <kbd>4</kbd></td><td>Use skills on the hotbar</td></tr>
+          <tr><td><kbd>F</kbd></td><td>Speak to the nearest NPC</td></tr>
+          <tr><td><kbd>I</kbd> or <kbd>B</kbd></td><td>Bag</td></tr>
+          <tr><td><kbd>L</kbd></td><td>Quest log</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>Chat (Enter sends, Esc cancels)</td></tr>
+          <tr><td><kbd>F1</kbd></td><td>Help and settings</td></tr>
+          <tr><td><kbd>M</kbd></td><td>Mute</td></tr>
+        </tbody></table></div></div></details>
+      <details class="faq"><summary>How do I beat the Stone Guardian?</summary><div class="answer"><p>Bring friends and a Physician, and watch the ground. Every big attack paints a ring first. Leave the ring before it lands. See the <a href="/world">zone guide</a>.</p></div></details>
+    </div>
+
+    <div class="faq-group" id="bugs">
+      <h2>Reporting a bug</h2>
+      <p>Email <a href="mailto:{{cfg.supportEmail}}">{{cfg.supportEmail}}</a> with as much of this as you can:</p>
+      <ul>
+        <li>What you did, what you expected and what happened instead.</li>
+        <li>Your operating system and the launcher version (the version number is also on the <a href="/download">download page</a>).</li>
+        <li>Your account name and character name. Never send your password.</li>
+        <li>The time it happened, with your time zone.</li>
+        <li>A screenshot, and any error text.</li>
+      </ul>
+      <div class="callout"><h4>Preview software</h4><p>This is a prototype. Expect rough edges, wiped characters before launch, and balance changes. Thank you for helping us find them.</p></div>
+    </div>
+  </div>
+</section>

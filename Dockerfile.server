@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+# Sword and Seal game server for Fly.io. Build from the repo root:
+#   docker build -f Dockerfile.server -t sword-and-seal-server .
+# The server is one esbuild bundle (ws included): the runtime image needs only Node, no node_modules.
+
+FROM node:22-slim AS build
+WORKDIR /src
+COPY server/package.json server/package-lock.json ./server/
+RUN cd server && npm ci --no-audit --no-fund
+COPY shared ./shared
+COPY server/src ./server/src
+COPY server/tsconfig.json ./server/
+COPY scripts/build-server.mjs ./scripts/build-server.mjs
+RUN node scripts/build-server.mjs
+
+# node:sqlite is unflagged since Node 22.13 (node:22-slim is >= 22.13); it only prints an ExperimentalWarning, silenced below.
+FROM node:22-slim
+ENV NODE_ENV=production PORT=8787 DB_PATH=/data/game.db
+WORKDIR /app
+COPY VERSION ./VERSION
+COPY --from=build /src/server/dist/server.mjs ./server/dist/server.mjs
+COPY deploy/fly/supervisor.mjs ./supervisor.mjs
+COPY deploy/fly/backup/s3.mjs deploy/fly/backup/backup.mjs deploy/fly/backup/restore.mjs ./backup/
+# No USER line on purpose: Fly volumes are mounted root-owned, so PID 1 (supervisor.mjs, ~40 LOC) starts as root only to chown /data,
+# then spawns the game server and the backup job as the unprivileged `node` user (uid/gid 1000). The game server never runs as root.
+RUN mkdir -p /data && chown node:node /data
+EXPOSE 8787
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8787)+'/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+# Node is PID 1 (supervisor.mjs): it forwards SIGTERM to the server so players are saved before exit.
+CMD ["node", "--disable-warning=ExperimentalWarning", "supervisor.mjs"]

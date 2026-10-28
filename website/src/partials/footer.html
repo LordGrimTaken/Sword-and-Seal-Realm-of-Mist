@@ -1,0 +1,35 @@
+<footer class="site-footer">
+  <div class="wrap">
+    {{include:brush}}
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <p class="foot-title">{{include:seal}}<span>Sword <span class="amp">&amp;</span> Seal</span></p>
+        <p>Realm of Mist is an ink-wash xianxia online world, currently a playable prototype. One valley, three paths of cultivation, one very large stone guardian.</p>
+      </div>
+      <nav aria-label="Explore">
+        <h2 class="foot-h">Explore</h2>
+        <ul>
+          <li><a href="/world">Cloudmist Valley</a></li>
+          <li><a href="/classes">Classes</a></li>
+          <li><a href="/news">News</a></li>
+          <li><a href="/download">Download</a></li>
+        </ul>
+      </nav>
+      <nav aria-label="Help and legal">
+        <h2 class="foot-h">Help and legal</h2>
+        <ul>
+          <li><a href="/support">Support and FAQ</a></li>
+          <li><a href="/terms">Terms of Service</a> <span class="draft-tag">draft</span></li>
+          <li><a href="/privacy">Privacy Policy</a> <span class="draft-tag">draft</span></li>
+          <li><a href="/eula">EULA</a> <span class="draft-tag">draft</span></li>
+        </ul>
+      </nav>
+      <div>
+        <h2 class="foot-h">Contact</h2>
+        <p><a href="mailto:{{cfg.supportEmail}}">{{cfg.supportEmail}}</a></p>
+        <p><a class="status status-foot" href="/download" data-status data-state="unknown"><span class="dot" aria-hidden="true"></span><span class="status-text" data-status-text>Server status</span></a></p>
+      </div>
+    </div>
+    <p class="fine">&copy; {{year}} Sword and Seal. Prototype preview, version {{version}}. No tracking cookies, no analytics. Lettering set in Ma Shan Zheng and Noto Serif, both licensed under the SIL Open Font License.</p>
+  </div>
+</footer>

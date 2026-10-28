@@ -1,0 +1,9 @@
+{
+  "releaseBaseUrl": "https://dl.swordandseal.com/game",
+  "apiBaseUrl": "https://play.swordandseal.com",
+  "gameServerUrl": "wss://play.swordandseal.com",
+  "website": "https://swordandseal.com",
+  "support": "https://swordandseal.com/support",
+  "channel": "stable",
+  "launcherUpdate": { "enabled": false, "url": "" }
+}

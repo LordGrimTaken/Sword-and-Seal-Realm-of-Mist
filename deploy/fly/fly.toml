@@ -1,0 +1,52 @@
+# Sword and Seal: public game server on Fly.io  (wss://play.swordandseal.com)
+# Deploy with deploy/fly/deploy.sh (it passes --config, --dockerfile and --ha=false for you).
+#
+# ONE machine only, by design: characters live in a SQLite file on a Fly volume. A volume attaches to a single machine
+# in a single region, and the game world is a single in-memory simulation, so a second machine would be a second,
+# separate world with its own (empty) database. Scale UP (bigger vm), never OUT. See docs/DEPLOY_FLY.md "Scaling".
+
+app = "sword-and-seal-play"
+primary_region = "iad"
+kill_signal = "SIGTERM"   # server.ts shutdown(): final save of all players, closes sockets with 1001
+kill_timeout = 15         # seconds before SIGKILL (supervisor waits max 12 s, the server itself force-exits after 3 s)
+
+[deploy]
+  strategy = "rolling"    # with one machine this is stop-old -> start-new -> wait for health (bluegreen is not possible with a volume)
+
+[env]
+  PORT = "8787"
+  DB_PATH = "/data/game.db"
+  # Browser/web clients only. The Electron launcher sends no Origin header, so it needs neither CORS nor ALLOW_NULL_ORIGIN.
+  CORS_ORIGINS = "https://swordandseal.com,https://www.swordandseal.com"
+  # Use Fly-Client-IP as the per-IP rate-limit key. Needs the small server patch in docs/DEPLOY_FLY.md (ignored by servers without it).
+  TRUST_FLY_CLIENT_IP = "1"
+  # TOKEN_SECRET and R2_* come from `fly secrets`. TEST_MODE must NEVER be set here or as a secret.
+
+[[mounts]]
+  source = "game_data"
+  destination = "/data"
+  initial_size = "1gb"
+  # Daily volume snapshots are automatic (5 day retention by default) on top of our own R2 backups.
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 150   # server caps players at 100 (TUNING.maxPlayers) and sockets at 200; 150 leaves headroom before Fly stops preferring this machine
+    hard_limit = 200
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

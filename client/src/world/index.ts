@@ -1,0 +1,95 @@
+// JIUZHOU world: Cloudmist Valley
+import * as THREE from "three";
+import { buildAmbient } from "./ambient";
+import { buildGround } from "./ground";
+import { buildMountains, buildSky, HORIZON, SUN_DIR } from "./sky";
+import { buildStructures } from "./structures";
+import { buildTerrain, heightAt } from "./terrain";
+import { buildVegetation } from "./vegetation";
+import { buildCranes } from "./cranes";
+import { buildWater } from "./water";
+import { PAL, hex } from "./toon";
+
+export { heightAt };
+
+export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): {
+  update(dt: number, camPos: THREE.Vector3): void;
+  heightAt(x: number, z: number): number;
+} {
+  const root = new THREE.Group();
+  root.name = "jiuzhou-world";
+  scene.add(root);
+
+  scene.background = HORIZON.clone();
+  scene.fog = new THREE.Fog(HORIZON.clone(), 26, 175);
+
+  // lights: hemisphere + sun + 3 cheap lantern point lights = 4 dynamic lights total (1 hemi, 1 dir, 3 point)
+  const hemi = new THREE.HemisphereLight(hex(PAL.mistLight, PAL.paper, 0.3), hex(PAL.paperDark, PAL.mist, 0.5), 1.45);
+  root.add(hemi);
+  const sun = new THREE.DirectionalLight(hex(PAL.paper, PAL.gold, 0.08), 1.8);
+  sun.position.copy(SUN_DIR).multiplyScalar(100);
+  root.add(sun);
+
+  const sky = buildSky();
+  const mountains = buildMountains();
+  root.add(sky, mountains.group);
+
+  const terrain = buildTerrain();
+  const structures = buildStructures();
+  const veg = buildVegetation();
+  const water = buildWater();
+  const cranes = buildCranes();
+  const ambient = buildAmbient(structures.lanterns, { smokes: structures.smokes, rays: structures.rays });
+  root.add(terrain, buildGround(), structures.group, veg.group, water.mesh, ambient.group, cranes.mesh);
+
+  const lights: THREE.PointLight[] = [];
+  for (let i = 0; i < 3; i++) {
+    const l = new THREE.PointLight(0xefae5c, 7.5, 15, 2);
+    l.position.set(0, -50, 0);
+    root.add(l);
+    lights.push(l);
+  }
+  const targets = lights.map(() => new THREE.Vector3(0, -50, 0));
+
+  let time = 0, lightClock = 0;
+  const size = new THREE.Vector2();
+  const lan = structures.lanterns;
+  const tmp = new THREE.Vector3();
+
+  function pickLights(cam: THREE.Vector3) {
+    // nearest three lanterns that are close to the camera's ground focus (cam looks down, so use xz)
+    const best: { d: number; i: number }[] = [];
+    for (let i = 0; i < lan.length; i++) {
+      const dx = lan[i].x - cam.x, dz = lan[i].z - cam.z;
+      const d = dx * dx + dz * dz;
+      if (best.length < 3) { best.push({ d, i }); best.sort((a, b) => a.d - b.d); }
+      else if (d < best[2].d) { best[2] = { d, i }; best.sort((a, b) => a.d - b.d); }
+    }
+    best.forEach((b, k) => { targets[k].copy(lan[b.i]); });
+  }
+
+  return {
+    heightAt,
+    update(dt: number, camPos: THREE.Vector3) {
+      time += dt;
+      lightClock -= dt;
+      if (lightClock <= 0) { lightClock = 0.35; pickLights(camPos); }
+      for (let k = 0; k < 3; k++) {
+        tmp.copy(targets[k]);
+        lights[k].position.lerp(tmp, Math.min(1, dt * 6));
+        lights[k].intensity = 7.5 * (0.93 + 0.07 * Math.sin(time * 5.3 + k * 2.1));
+      }
+      // skybox-style layers follow camera (parallax-correct)
+      sky.position.copy(camPos);
+      (sky.material as THREE.ShaderMaterial).uniforms.uTime.value = time;
+      mountains.group.position.set(camPos.x * (1 - mountains.scale), camPos.y * (1 - mountains.scale) - 6, camPos.z * (1 - mountains.scale));
+      veg.update(time);
+      structures.update(time);
+      cranes.update(time);
+      mountains.update(time);
+      water.update(time);
+      renderer.getDrawingBufferSize(size);
+      ambient.update(time, camPos, size.y);
+    },
+  };
+}

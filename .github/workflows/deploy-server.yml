@@ -1,0 +1,50 @@
+name: deploy-server
+
+# Deploys the game server to Fly.io (app sword-and-seal-play, wss://play.swordandseal.com).
+# Trigger: push a tag like server-v0.3.1, or run manually from the Actions tab.
+# Needs the repository secret FLY_API_TOKEN (create with: flyctl tokens create deploy -a sword-and-seal-play).
+on:
+  push:
+    tags: ["server-v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-server   # never two deploys at once (one machine, one volume)
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install server dependencies
+        run: npm ci
+        working-directory: server
+      - name: Typecheck and server test suite
+        run: |
+          npm run typecheck
+          npm test
+        working-directory: server
+      - name: Backup/restore logic test (fake S3 + real sqlite)
+        run: node deploy/fly/backup/test-backup.mjs
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production   # optional: add required reviewers in GitHub > Settings > Environments
+    steps:
+      - uses: actions/checkout@v4
+      # superfly/flyctl-actions publishes no version tags (only `master`); pin the flyctl itself with `version:` if you want it frozen.
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy
+        run: deploy/fly/deploy.sh
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Smoke test (health + websocket login)
+        run: deploy/fly/deploy.sh smoke https://play.swordandseal.com

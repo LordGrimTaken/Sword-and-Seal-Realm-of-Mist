@@ -1,0 +1,167 @@
+<!--meta {"title":"Cloudmist Valley: zone guide and map | Sword & Seal","description":"Zone guide to Cloudmist Valley in Sword & Seal: Realm of Mist. Map of the spawn plaza, paifang gate, Lotus Pond and stone bridge, Bamboo Grove, Fox Hills and the Ruined Shrine, with monster level ranges and boss notes.","priority":0.8,"nav":"world"} -->
+<header class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Starter zone</p>
+    <h1>Cloudmist Valley</h1>
+    <p class="lede">A single misty valley, 200 by 200 units, from a lantern-lit plaza in the south to a ruined shrine in the north. Levels 1 to 20 can all be earned here.</p>
+  </div>
+</header>
+
+<section class="section" aria-labelledby="map-title">
+  <div class="wrap">
+    <h2 id="map-title">Map of the valley</h2>
+    <p class="muted">North is up. You arrive at the spawn plaza in the south and work your way north. Numbers mark landmarks; letters mark the harder outer hunting grounds.</p>
+    <div class="map-wrap">
+      <figure class="scroll map-card" role="group" aria-labelledby="map-cap">
+        <svg class="map-svg" viewBox="0 0 400 400" role="img" aria-labelledby="map-t map-d">
+          <title id="map-t">Map of Cloudmist Valley</title>
+          <desc id="map-d">A top-down ink map. The spawn plaza and paifang gate are at the bottom. A stone road runs north across a stone bridge over the Lotus Pond, then up to the Ruined Shrine at the top. The Bamboo Grove lies to the west of the road and the Fox Hills to the east. Six harder hunting grounds line the outer edges and corners.</desc>
+          <rect class="m-paper" x="0" y="0" width="400" height="400"/>
+          <g fill="none" stroke="#c9b98f" stroke-width="1.2" opacity=".7" stroke-linecap="round">
+            <path d="M10 190 Q70 170 120 195 T230 185 T390 200"/><path d="M12 215 Q80 200 130 222 T240 212 T388 226"/>
+            <path d="M16 118 Q90 100 150 122 T270 112 T386 126"/><path d="M12 300 Q70 285 130 305 T250 296 T390 312"/>
+          </g>
+          <!-- outer hunting grounds -->
+          <rect class="m-tier" x="10" y="56" width="62" height="34" rx="8"/>
+          <rect class="m-tier" x="338" y="240" width="44" height="52" rx="8"/>
+          <rect class="m-tier" x="6" y="118" width="26" height="144" rx="8"/>
+          <rect class="m-tier" x="370" y="122" width="26" height="100" rx="8"/>
+          <rect class="m-tier" x="6" y="8" width="76" height="38" rx="8"/>
+          <rect class="m-tier" x="298" y="8" width="92" height="38" rx="8"/>
+          <!-- roads -->
+          <path class="m-path" d="M200 346 L200 304 M200 232 L200 200 Q200 150 200 66"/>
+          <path class="m-path" d="M200 196 Q172 188 150 172 M200 196 Q232 188 262 164"/>
+          <path class="m-path2" d="M200 346 L200 304 M200 232 L200 200 Q200 150 200 66 M200 196 Q172 188 150 172 M200 196 Q232 188 262 164"/>
+          <!-- pond + bridge -->
+          <circle class="m-water" cx="200" cy="268" r="33"/>
+          <path class="m-wave" d="M178 258q6-5 12 0t12 0t12 0M172 272q6-5 12 0t12 0t12 0t12 0M182 284q6-5 12 0t12 0t12 0"/>
+          <g fill="#e7a8a0" stroke="#a33a35" stroke-width="1.4"><circle cx="222" cy="258" r="4"/><circle cx="178" cy="278" r="4"/><circle cx="214" cy="287" r="3.4"/></g>
+          <rect class="m-bridge" x="195" y="230" width="10" height="76" rx="1.5"/>
+          <path d="M195 240h10M195 250h10M195 260h10M195 270h10M195 280h10M195 290h10M195 300h10" stroke="#3a3a44" stroke-width="1" opacity=".55"/>
+          <!-- plaza -->
+          <circle cx="200" cy="360" r="25" fill="#d9ccaa" stroke="#3a3a44" stroke-width="2"/>
+          <circle cx="200" cy="360" r="19" fill="none" stroke="#b92f26" stroke-width="1.6" stroke-dasharray="3 4"/>
+          <path class="m-ink" d="M200 351l2.6 6.6 7.2.5-5.6 4.5 1.9 7-6.1-3.9-6.1 3.9 1.9-7-5.6-4.5 7.2-.5z"/>
+          <!-- gate (paifang) -->
+          <g class="m-line"><path d="M188 330v-14M212 330v-14M184 318h32M188 313h24"/></g>
+          <path class="m-red" d="M183 316h34v3.2h-34z"/>
+          <!-- pagoda -->
+          <g transform="translate(146 344)"><path class="m-ink" d="M-9 4h18v-5h-18zM-6.5-1h13v-5h-13zM-4-6h8v-5h-8zM-1.2-11h2.4v-6h-2.4z"/><path class="m-ink" d="M-12 4q12-8 24 0M-9-1q9-6 18 0M-6.5-6q6.5-5 13 0" fill="none" stroke="#3a3a44" stroke-width="2"/></g>
+          <!-- bamboo grove -->
+          <path class="m-grove" d="M86 132q22-16 52-8t24 38q8 28-10 52t-38 10q-30-2-34-34t6-58z"/>
+          <g class="m-bamboo"><path d="M104 224V150M118 232V140M132 222V152M146 214V166M96 204V160"/><path d="M104 180l8-5M118 170l-8-5M132 186l8-5M146 190l-7-5" stroke-width="2"/></g>
+          <!-- fox hills -->
+          <path class="m-hills" d="M266 196q8-34 30-26 4-40 36-26 18-10 24 28 6 14-4 24z"/>
+          <path d="M276 190q14-18 28-4M312 176q12-16 26-2M296 154q10-12 22-2" fill="none" stroke="#a1764a" stroke-width="2" stroke-linecap="round"/>
+          <path d="M308 168q6-10 14-8l-3 8 7 2-3 7z" fill="#c8372d" opacity=".85"/>
+          <!-- shrine hill -->
+          <circle cx="200" cy="30" r="34" fill="#e0d1ac" stroke="#a1764a" stroke-width="2"/>
+          <circle class="m-ring" cx="200" cy="30" r="22"/>
+          <g class="m-line"><path d="M186 40v-14M214 40v-14M182 28h36M188 22h24"/></g>
+          <path class="m-red" d="M181 26h38v3.4h-38z"/>
+          <path d="M194 44h12v-9h-12z" fill="#3a3a44"/>
+          <!-- labels -->
+          <text class="m-label" x="120" y="252" text-anchor="middle">Bamboo Grove</text>
+          <text class="m-label" x="296" y="214" text-anchor="middle">Fox Hills</text>
+          <text class="m-label" x="240" y="306">Lotus Pond</text>
+          <text class="m-label" x="200" y="82" text-anchor="middle">Ruined Shrine</text>
+          <text class="m-label" x="200" y="397" text-anchor="middle">Spawn Plaza</text>
+          <!-- markers: landmarks -->
+          <g>
+            <g transform="translate(228 372)"><rect x="-10" y="-10" width="20" height="20" rx="2.5" class="m-red" transform="rotate(-4)"/><text class="m-num">1</text></g>
+            <g transform="translate(228 324)"><rect x="-10" y="-10" width="20" height="20" rx="2.5" class="m-red" transform="rotate(-4)"/><text class="m-num">2</text></g>
+            <g transform="translate(120 340)"><rect x="-10" y="-10" width="20" height="20" rx="2.5" class="m-red" transform="rotate(-4)"/><text class="m-num">3</text></g>
+            <g transform="translate(240 252)"><rect x="-10" y="-10" width="20" height="20" rx="2.5" class="m-red" transform="rotate(-4)"/><text class="m-num">4</text></g>
+            <g transform="translate(108 196)"><rect x="-10" y="-10" width="20" height="20" rx="2.5" class="m-red" transform="rotate(-4)"/><text class="m-num">5</text></g>
+            <g transform="translate(278 126)"><rect x="-10" y="-10" width="20" height="20" rx="2.5" class="m-red" transform="rotate(-4)"/><text class="m-num">6</text></g>
+            <g transform="translate(246 40)"><rect x="-10" y="-10" width="20" height="20" rx="2.5" class="m-red" transform="rotate(-4)"/><text class="m-num">7</text></g>
+          </g>
+          <!-- markers: tiers -->
+          <g fill="#4fa58b" stroke="#1d4a3d" stroke-width="1.5">
+            <circle cx="41" cy="73" r="10"/><circle cx="360" cy="266" r="10"/><circle cx="19" cy="190" r="10"/><circle cx="383" cy="172" r="10"/><circle cx="44" cy="27" r="10"/><circle cx="344" cy="27" r="10"/>
+          </g>
+          <g><text class="m-letter" x="41" y="73">A</text><text class="m-letter" x="360" y="266">B</text><text class="m-letter" x="19" y="190">C</text><text class="m-letter" x="383" y="172">D</text><text class="m-letter" x="44" y="27">E</text><text class="m-letter" x="344" y="27">F</text></g>
+          <!-- compass + scale -->
+          <g transform="translate(40 372)"><circle r="17" fill="#eadfc2" stroke="#3a3a44" stroke-width="1.5"/><path d="M0-13l5 13h-10z" class="m-red"/><path d="M0 13l5-13h-10z" fill="#3a3a44" opacity=".35"/><text class="m-n" y="-20">N</text></g>
+          <g transform="translate(296 382)"><path d="M0 0h100M0-4v8M50-4v8M100-4v8" stroke="#3a3a44" stroke-width="2" fill="none"/><text class="m-small" x="0" y="-8">0</text><text class="m-small" x="100" y="-8" text-anchor="end">50 units</text></g>
+          <rect class="m-edge" x="1.25" y="1.25" width="397.5" height="397.5"/>
+        </svg>
+        <figcaption id="map-cap"><strong>Hand-inked map</strong>Drawn from the server's zone data. Distances are to scale; scenery is stylised.</figcaption>
+      </figure>
+      <div>
+        <h3>Landmarks</h3>
+        <ol class="legend" aria-label="Landmarks">
+          <li><span class="pin" aria-hidden="true">1</span><div><h4>Spawn Plaza</h4><p>Where every journey starts, at the south end of the valley. Elder Lin, Lantern Keeper Mei, Gate Warden Wu and Notice Board Keeper Fen wait here. No monster spawns within 35 units, and you return here if you fall.</p></div></li>
+          <li><span class="pin" aria-hidden="true">2</span><div><h4>Paifang Gate</h4><p>A vermilion gateway with banners and couplets, where the lantern-lined path to the north begins.</p></div></li>
+          <li><span class="pin" aria-hidden="true">3</span><div><h4>Pagoda of Echoing Bells</h4><p>A small pagoda on the western side of the plaza. Its plaque is worth reading.</p></div></li>
+          <li><span class="pin" aria-hidden="true">4</span><div><h4>Lotus Pond and stone bridge</h4><p>A round lotus pond crossed by a long stone bridge. Jade Serpents lurk on the dry shore on both sides. Elder Lin's third quest sends you here.</p></div></li>
+          <li><span class="pin" aria-hidden="true">5</span><div><h4>Bamboo Grove</h4><p>The western grove: dense bamboo, Bamboo Spirits and the Bamboo Fiber that Lantern Keeper Mei needs for the plaza lanterns.</p></div></li>
+          <li><span class="pin" aria-hidden="true">6</span><div><h4>Fox Hills</h4><p>Rolling green hills in the east, home to Fox Spirits. They steal from travellers and sometimes drop a Fox Tail.</p></div></li>
+          <li><span class="pin" aria-hidden="true">7</span><div><h4>Ruined Shrine</h4><p>At the far north, on a hill. A Stone Guardian still defends it. See the boss notes below.</p></div></li>
+        </ol>
+        <h3 class="mt-lg">Outer hunting grounds</h3>
+        <ol class="legend" aria-label="Outer hunting grounds" type="A">
+          <li><span class="pin tier" aria-hidden="true">A</span><div><h4>North-west</h4><p>Bamboo Spirits <span class="lv">Lv 5-8</span></p></div></li>
+          <li><span class="pin tier" aria-hidden="true">B</span><div><h4>East, below the hills</h4><p>Fox Spirits <span class="lv">Lv 7-11</span></p></div></li>
+          <li><span class="pin tier" aria-hidden="true">C</span><div><h4>Far west edge</h4><p>Bamboo Spirits <span class="lv">Lv 12-15</span></p></div></li>
+          <li><span class="pin tier" aria-hidden="true">D</span><div><h4>Far east edge</h4><p>Fox Spirits <span class="lv">Lv 13-17</span></p></div></li>
+          <li><span class="pin tier" aria-hidden="true">E</span><div><h4>North-west corner</h4><p>Bamboo Spirits <span class="lv">Lv 17-20</span></p></div></li>
+          <li><span class="pin tier" aria-hidden="true">F</span><div><h4>North-east corner</h4><p>Fox Spirits <span class="lv">Lv 18-20</span></p></div></li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt" aria-labelledby="mobs-title">
+  <div class="wrap">
+    <div class="section-head"><p class="eyebrow">Bestiary</p><h2 id="mobs-title">What lives here</h2>
+    <p class="lede">Level ranges in the starter areas. The same monster types return in the outer grounds at higher levels, with health and damage scaled to match.</p></div>
+    <div class="table-wrap">
+      <table>
+        <caption class="sr-only">Monsters of Cloudmist Valley</caption>
+        <thead><tr><th scope="col">Monster</th><th scope="col">Where</th><th scope="col">Level</th><th scope="col">Good to know</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Bamboo Spirit</th><td>Bamboo Grove</td><td class="num"><span class="lv">1-3</span></td><td>Gentle opener. Drops Bamboo Fiber (70% chance).</td></tr>
+          <tr><th scope="row">Jade Serpent</th><td>Lotus Pond shore and bridge</td><td class="num"><span class="lv">2-4</span></td><td>Coils briefly, then lunges fast. The bite is poisoned for 4 seconds, so step aside during the coil. Drops Jade Scale; rarely Serpent Gall.</td></tr>
+          <tr><th scope="row">Fox Spirit</th><td>Fox Hills</td><td class="num"><span class="lv">3-4</span></td><td>Quick and aggressive from a distance. Drops Fox Tail (60% chance).</td></tr>
+          <tr><th scope="row">Stone Guardian</th><td>Ruined Shrine</td><td class="num"><span class="lv">8</span> boss</td><td>Telegraphed ground attacks, a second phase and an enrage timer. Drops the Guardian Core; returns after two minutes.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="boss-title">
+  <div class="wrap split">
+    <div>
+      <p class="eyebrow">Boss</p>
+      <h2 id="boss-title">The Stone Guardian</h2>
+      <p class="lede">It lost its master long ago and attacks anything that climbs the hill. It is slow, hits hard, and always tells you where.</p>
+      <ul>
+        <li><strong>Slam.</strong> A ring appears under one player and strikes after about two seconds.</li>
+        <li><strong>Stomp.</strong> A wide ring around the Guardian itself. Back away when it glows.</li>
+        <li><strong>Scatter.</strong> Below half health it throws three smaller rings around a player. Spread out and keep moving.</li>
+        <li><strong>Enrage.</strong> After two and a half minutes of continuous combat its damage rises by half. Finish it.</li>
+      </ul>
+      <p>Everyone within 70 units when it falls is credited with the kill, and defeating it grants Jade, a rare currency. Bring a Physician.</p>
+    </div>
+    <figure class="scroll">
+      <div class="frame"><img src="{{asset:img/shrine.webp}}" width="1280" height="720" loading="lazy" alt="The Stone Guardian with a red telegraph circle and a smaller ring drawn on the ground around the player."></div>
+      <figcaption><strong>Read the ground</strong>A telegraph ring, seconds before it lands.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="section alt" aria-labelledby="people-title">
+  <div class="wrap">
+    <div class="section-head"><p class="eyebrow">People of the plaza</p><h2 id="people-title">Who to talk to</h2></div>
+    <div class="npc-list">
+      <div class="npc"><h4>Elder Lin</h4><p>Gives the four-part quest chain: Clear Bamboo Spirits, Collect Fox Tails, Cleanse the Pond and Defeat the Stone Guardian.</p></div>
+      <div class="npc"><h4>Lantern Keeper Mei</h4><p>Needs five Bamboo Fiber for the plaza lanterns, and rewards you with a Paper Lantern and a Healing Tonic.</p></div>
+      <div class="npc"><h4>Notice Board Keeper Fen</h4><p>Runs the daily notice board. Three tasks a day, from slaying and gathering to simply cultivating, paying coin, jade and experience.</p></div>
+      <div class="npc"><h4>Gate Warden Wu</h4><p>Keeps the paifang gate and the road north. Say hello before you head out.</p></div>
+    </div>
+    <p class="center mt-xl"><a class="btn big" href="/download">Download the Launcher</a></p>
+  </div>
+</section>

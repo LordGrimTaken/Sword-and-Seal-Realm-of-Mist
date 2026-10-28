@@ -1,0 +1,18 @@
+# Allow-list style: only what Dockerfile.server COPYs is needed.
+*
+!VERSION
+!shared/**
+!server/package.json
+!server/package-lock.json
+!server/src/**
+!server/tsconfig.json
+!scripts/build-server.mjs
+!deploy/fly/supervisor.mjs
+!deploy/fly/backup/s3.mjs
+!deploy/fly/backup/backup.mjs
+!deploy/fly/backup/restore.mjs
+**/node_modules
+**/.env
+**/*.db
+**/*.db-*
+**/token.secret

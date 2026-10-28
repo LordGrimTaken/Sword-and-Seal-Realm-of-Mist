@@ -1,0 +1,62 @@
+name: ci
+
+# Pull-request checks. No secrets are used here (and none are available to fork PRs).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launcher-and-release-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Launcher tests
+        run: node --test "test/*.test.mjs"
+        working-directory: launcher
+      - name: Release tooling tests (publish-release against the fake download host)
+        run: node --test test/publish-release.test.mjs
+
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: server
+      - name: Typecheck and server test suite
+        run: |
+          npm run typecheck
+          npm test
+        working-directory: server
+
+  client:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: client
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: client
+      - name: English-only check
+        run: npm run check:english
+        working-directory: client

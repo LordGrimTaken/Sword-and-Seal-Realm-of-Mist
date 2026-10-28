@@ -1,0 +1,7 @@
+name = "sword-and-seal-dl"
+main = "worker.mjs"
+compatibility_date = "2026-10-01"
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "sword-and-seal-downloads"
+# route: dl.swordandseal.com (custom domain); secret ADMIN_TOKEN set via dashboard/API

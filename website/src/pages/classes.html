@@ -1,0 +1,80 @@
+<!--meta {"title":"Classes: Sword Cultivator, Talisman Master, Physician | Sword & Seal","description":"The three classes of Sword & Seal: Realm of Mist. Sword Cultivator (melee), Talisman Master (ranged) and Physician (support), with all four skills each, cooldowns and ranges.","priority":0.8,"nav":"classes"} -->
+<header class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Three paths of cultivation</p>
+    <h1>The Classes</h1>
+    <p class="lede">Every cultivator carries four skills on keys 1 to 4. Numbers below come straight from the game server's data file, so they match what you will see in play (preview build, subject to balance changes).</p>
+    <p class="muted">Jump to: <a href="#sword">Sword Cultivator</a> &middot; <a href="#talisman">Talisman Master</a> &middot; <a href="#physician">Physician</a></p>
+  </div>
+</header>
+<section class="wrap class-hero" id="sword" aria-labelledby="sword-h">
+  <figure class="scroll class-card">
+    <div class="frame"><img src="{{asset:img/sword.webp}}" width="560" height="630" loading="eager" alt="The Sword Cultivator character, standing on the flagstones of the spawn plaza."></div>
+    <div class="stamp" aria-hidden="true">{{include:seal}}</div>
+  </figure>
+  <div>
+    <p class="eyebrow">Melee</p>
+    <h2 id="sword-h">Sword Cultivator</h2>
+    <p class="lede">A frontline duelist. High health, steady damage and one very large strike. Stand in the Guardian's reach, read the rings, and let Qi Guard take the edge off the hits you cannot dodge.</p>
+    <ul class="stat-row" aria-label="Sword Cultivator base statistics">
+      <li><strong>Health</strong>120 + 25 per level</li><li><strong>Attack</strong>9 + 3 per level</li><li><strong>Crit chance</strong>12%</li><li><strong>Crit damage</strong>x1.6</li>
+    </ul>
+    <h3>Hotbar</h3>
+    <ol class="skill-list">
+          <li><span class="key" aria-hidden="true">1</span><div><h4>Flowing Slash <span class="sr-only">(key 1)</span></h4><p>Your basic cut. Fast, cheap and always ready between the big skills.</p><div class="tags"><span>Melee, 3.5 range</span><span>1 s cooldown</span></div></div></li>
+          <li><span class="key" aria-hidden="true">2</span><div><h4>Sword Qi Wave <span class="sr-only">(key 2)</span></h4><p>Throw a blade of qi at a foe up to 14 units away. Good for pulling mobs or finishing a fleeing Fox Spirit.</p><div class="tags"><span>Ranged bolt, 14 range</span><span>3 s cooldown</span><span>1.3x damage</span></div></div></li>
+          <li><span class="key" aria-hidden="true">3</span><div><h4>Heaven-Splitting Strike <span class="sr-only">(key 3)</span></h4><p>A heavy overhead strike that hits for more than three times a normal blow. Save it for the Guardian's recovery.</p><div class="tags"><span>Melee, 4 range</span><span>8 s cooldown</span><span>3.2x damage</span></div></div></li>
+          <li><span class="key" aria-hidden="true">4</span><div><h4>Qi Guard <span class="sr-only">(key 4)</span></h4><p>Wrap yourself in qi: incoming damage is halved for 5 seconds and you recover 10% of your health.</p><div class="tags"><span>Self</span><span>15 s cooldown</span><span>-50% damage taken</span></div></div></li>
+    </ol>
+  </div>
+</section>
+<section class="wrap class-hero rev" id="talisman" aria-labelledby="talisman-h">
+  <figure class="scroll class-card">
+    <div class="frame"><img src="{{asset:img/talisman.webp}}" width="560" height="630" loading="lazy" alt="The Talisman Master character, standing on the flagstones of the spawn plaza."></div>
+    <div class="stamp" aria-hidden="true">{{include:seal}}</div>
+  </figure>
+  <div>
+    <p class="eyebrow">Ranged</p>
+    <h2 id="talisman-h">Talisman Master</h2>
+    <p class="lede">A glass cannon with a deep paper satchel. Keep distance, drop area damage on grouped spirits, and slow whatever gets close. Wind Step is your panic button.</p>
+    <ul class="stat-row" aria-label="Talisman Master base statistics">
+      <li><strong>Health</strong>90 + 18 per level</li><li><strong>Attack</strong>8 + 3 per level</li><li><strong>Crit chance</strong>15%</li><li><strong>Crit damage</strong>x1.7</li>
+    </ul>
+    <h3>Hotbar</h3>
+    <ol class="skill-list">
+          <li><span class="key" aria-hidden="true">1</span><div><h4>Fire Talisman <span class="sr-only">(key 1)</span></h4><p>Throw a burning talisman at a target up to 20 units away. Your everyday attack.</p><div class="tags"><span>Ranged bolt, 20 range</span><span>1.2 s cooldown</span><span>1.1x damage</span></div></div></li>
+          <li><span class="key" aria-hidden="true">2</span><div><h4>Thunder Talisman <span class="sr-only">(key 2)</span></h4><p>Call lightning down on a point you choose. Hits everything inside a 6 unit radius.</p><div class="tags"><span>Area, 24 range, 6 radius</span><span>6 s cooldown</span><span>1.6x damage</span></div></div></li>
+          <li><span class="key" aria-hidden="true">3</span><div><h4>Frost Seal <span class="sr-only">(key 3)</span></h4><p>A chilling seal that slows the target to 40% speed for 4 seconds. Kite fox spirits all day.</p><div class="tags"><span>Ranged bolt, 18 range</span><span>8 s cooldown</span><span>0.8x damage, slow</span></div></div></li>
+          <li><span class="key" aria-hidden="true">4</span><div><h4>Wind Step <span class="sr-only">(key 4)</span></h4><p>A burst of wind about your feet: take 40% less damage for 4 seconds.</p><div class="tags"><span>Self</span><span>12 s cooldown</span><span>-40% damage taken</span></div></div></li>
+    </ol>
+  </div>
+</section>
+<section class="wrap class-hero" id="physician" aria-labelledby="physician-h">
+  <figure class="scroll class-card">
+    <div class="frame"><img src="{{asset:img/physician.webp}}" width="560" height="630" loading="lazy" alt="The Physician character, standing on the flagstones of the spawn plaza."></div>
+    <div class="stamp" aria-hidden="true">{{include:seal}}</div>
+  </figure>
+  <div>
+    <p class="eyebrow">Support</p>
+    <h2 id="physician-h">Physician</h2>
+    <p class="lede">The party's anchor. Weak alone but never alone for long. Jade Needle keeps you in the fight, Spring Rain keeps everyone alive, and Meridian Surge is a full-strength emergency heal.</p>
+    <ul class="stat-row" aria-label="Physician base statistics">
+      <li><strong>Health</strong>105 + 22 per level</li><li><strong>Attack</strong>6 + 2.5 per level</li><li><strong>Crit chance</strong>10%</li><li><strong>Crit damage</strong>x1.5</li>
+    </ul>
+    <h3>Hotbar</h3>
+    <ol class="skill-list">
+          <li><span class="key" aria-hidden="true">1</span><div><h4>Jade Needle <span class="sr-only">(key 1)</span></h4><p>A thin needle thrown from up to 16 units away. Light damage, no cost.</p><div class="tags"><span>Ranged bolt, 16 range</span><span>1 s cooldown</span></div></div></li>
+          <li><span class="key" aria-hidden="true">2</span><div><h4>Spring Rain <span class="sr-only">(key 2)</span></h4><p>A soft rain that heals you and every ally within 12 units for 15% of maximum health plus spell power.</p><div class="tags"><span>Self, 12 radius</span><span>7 s cooldown</span><span>Heals allies</span></div></div></li>
+          <li><span class="key" aria-hidden="true">3</span><div><h4>Purifying Light <span class="sr-only">(key 3)</span></h4><p>A pillar of clean light on a point you choose, burning foes in a 5 unit radius.</p><div class="tags"><span>Area, 14 range, 5 radius</span><span>6 s cooldown</span><span>2.2x damage</span></div></div></li>
+          <li><span class="key" aria-hidden="true">4</span><div><h4>Meridian Surge <span class="sr-only">(key 4)</span></h4><p>Open the meridians and restore 40% of your own maximum health at once.</p><div class="tags"><span>Self</span><span>20 s cooldown</span><span>Heals 40%</span></div></div></li>
+    </ol>
+  </div>
+</section>
+<section class="cta-band" aria-labelledby="cta-title">
+  <div class="wrap">
+    {{include:seal}}
+    <h2 id="cta-title">Which path will you walk?</h2>
+    <p>You choose a class when you create your character.</p>
+    <div class="btn-row"><a class="btn big" href="/download">Download the Launcher</a><a class="btn ghost big" href="/world">See the valley</a></div>
+  </div>
+</section>
