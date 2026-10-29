@@ -7,6 +7,7 @@ import { rockCluster, rockSlab } from "./rocks";
 import { fbm, mulberry32, smoothstep, vnoise } from "./noise";
 import { BRIDGE, FOX, GROVE, PLAZA, POND, WATER_Y, pathMask, pondD, terrainHeight } from "./terrain";
 import { PAL, hex, toonGradient } from "./toon";
+import { applyWind } from "./wind";
 
 function colorize(g: THREE.BufferGeometry, c: THREE.Color | ((x: number, y: number, z: number) => THREE.Color)): THREE.BufferGeometry {
   const n = g.getAttribute("position").count;
@@ -323,6 +324,7 @@ export function buildVegetation(): VegOut {
         transformed.z += cos(uTime * 0.9 + ph * 1.3) * 0.3 * hh * hh;
       `);
   });
+  applyWind(bambooMat, { height: 12, amp: 1.25, idle: 0.0 });
   const bamboo = new THREE.InstancedMesh(bambooGeometry(), bambooMat, bPts.length);
   scatter(bamboo, bPts);
   bamboo.name = "bamboo";
@@ -339,7 +341,9 @@ export function buildVegetation(): VegOut {
     if (rnd() > 0.6 + (fox ? 0.2 : 0)) continue;
     pPts.push({ x, z, s: 0.8 + rnd() * 0.9, ry: rnd() * 6.28, sy: 0.9 + rnd() * 0.4, tilt: (rnd() - 0.5) * 0.1 });
   }
-  const pines = new THREE.InstancedMesh(pineGeometry(), toonInst(), pPts.length);
+  const pineMat = toonInst();
+  applyWind(pineMat, { height: 7, amp: 0.34, idle: 0.35 });
+  const pines = new THREE.InstancedMesh(pineGeometry(), pineMat, pPts.length);
   scatter(pines, pPts);
   group.add(pines);
 
@@ -347,7 +351,9 @@ export function buildVegetation(): VegOut {
   let treeSeed = 1;
   const mk = (a: THREE.Color, b: THREE.Color, pts: { x: number; z: number }[], scaleMul = 1, alt?: THREE.Color, altP = 0) => {
     const g = treeGeometry(a, b, treeSeed++, alt, altP);
-    const m = new THREE.InstancedMesh(g, leafMat(), pts.length);
+    const lm = leafMat();
+    applyWind(lm, { height: 8, amp: 0.3, idle: 0.35 });
+    const m = new THREE.InstancedMesh(g, lm, pts.length);
     scatter(m, pts.map((p) => ({ x: p.x, z: p.z, s: (0.85 + rnd() * 0.5) * scaleMul, ry: rnd() * 6.28, sy: 1, tilt: 0 })));
     group.add(m);
   };
@@ -450,6 +456,7 @@ export function buildVegetation(): VegOut {
           transformed.x += (sin(uTime * 1.6 + ph + position.y) * 0.1 + sin(uTime * 3.1 + ph * 2.0) * 0.03) * hh * hh * 1.6;
           transformed.z += cos(uTime * 1.3 + ph * 1.3) * 0.08 * hh * hh * 1.6;`);
     });
+    applyWind(reedMat, { height: 2, amp: 0.55, idle: 0.0 });
     const reeds = new THREE.InstancedMesh(reedG, reedMat, reedPts.length);
     scatter(reeds, reedPts.map((p) => ({ ...p, dy: -0.05 })));
     reeds.name = "reeds";

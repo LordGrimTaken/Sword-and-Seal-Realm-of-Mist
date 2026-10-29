@@ -117,7 +117,7 @@ function changelogNews() {
   return out;
 }
 const newsSeed = changelogNews();
-const newsDates = { "0.3.0": "2026-10-28" }; // changelog has no dates; unknown ones are omitted
+const newsDates = { "0.3.0": "2026-10-28", "0.4.0": "2026-10-29" }; // changelog has no dates; unknown ones are omitted
 const newsSeedHtml = newsSeed.map((n) => `
       <article class="post" id="v${n.version.replace(/\./g, "-")}">
         <header><p class="eyebrow">Version ${esc(n.version)}${newsDates[n.version] ? ` &middot; <time datetime="${newsDates[n.version]}">${newsDates[n.version]}</time>` : ""}</p>

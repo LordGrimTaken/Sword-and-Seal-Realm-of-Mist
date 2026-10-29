@@ -1,6 +1,8 @@
 import { INTEREST_RADIUS } from "@shared/protocol";
 
 const SIZE = 168;
+/** A telegraphed danger zone on the minimap. `shape` defaults to a circle; `dir` is the current facing (beams rotate). */
+export interface DangerMark { x: number; z: number; radius: number; frac: number; shape?: "circle" | "cone" | "line"; dir?: number; arc?: number; len?: number; width?: number; beam?: boolean; live?: boolean }
 const PLACES = { plaza: { x: 0, z: -80 }, pond: { x: 0, z: -34 }, fox: { x: 55, z: 30 }, shrine: { x: 0, z: 85 } };
 
 /** Round ink-wash minimap. Rotates with the camera so "up" is where you look. */
@@ -52,7 +54,7 @@ export class Minimap {
     return c;
   }
 
-  draw(me: { x: number; z: number }, yaw: number, dots: Array<{ x: number; z: number; k: "player" | "mob" | "npc"; dead: boolean; mob?: string }>, dangers: Array<{ x: number; z: number; radius: number; frac: number }> = []) {
+  draw(me: { x: number; z: number }, yaw: number, dots: Array<{ x: number; z: number; k: "player" | "mob" | "npc"; dead: boolean; mob?: string }>, dangers: DangerMark[] = []) {
     const g = this.ctx, S = SIZE * this.dpr, R = S / 2;
     g.clearRect(0, 0, S, S);
     g.save();
@@ -83,6 +85,22 @@ export class Minimap {
     { const [x, y] = toScreen(PLACES.shrine.x, PLACES.shrine.z); g.fillStyle = "#c8372d"; g.fillRect(x - 3 * this.dpr, y - 3 * this.dpr, 6 * this.dpr, 6 * this.dpr); }
     // telegraphed boss attacks: pulsing red disc that fills as the wind-up completes
     for (const d of dangers) {
+      if (d.shape === "cone" || d.shape === "line") { // cone / line / beam: filled polygon in the same red ink
+        const dir = d.dir ?? 0, len = d.len ?? d.radius, pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.015);
+        const pts: Array<[number, number]> = [];
+        if (d.shape === "line") {
+          const hw = (d.width ?? 2) / 2, sd = Math.sin(dir), cd = Math.cos(dir), L = d.beam ? len : len * Math.max(0.15, d.frac);
+          for (const [al, sd2] of [[0, -1], [L, -1], [L, 1], [0, 1]] as const) pts.push(toScreen(d.x + sd * al + cd * sd2 * hw, d.z + cd * al - sd * sd2 * hw));
+        } else {
+          const half = (d.arc ?? 1.4) / 2, L = len * Math.max(0.15, d.frac);
+          pts.push(toScreen(d.x, d.z));
+          for (let k = 0; k <= 8; k++) { const a = dir - half + (2 * half * k) / 8; pts.push(toScreen(d.x + Math.sin(a) * L, d.z + Math.cos(a) * L)); }
+        }
+        g.beginPath(); pts.forEach(([px, py], k) => (k ? g.lineTo(px, py) : g.moveTo(px, py))); g.closePath();
+        g.fillStyle = d.live ? `rgba(255,170,90,${0.55 + 0.25 * pulse})` : `rgba(200,55,45,${0.22 + 0.2 * d.frac + 0.1 * pulse})`; g.fill();
+        g.strokeStyle = `rgba(200,55,45,${0.7 + 0.3 * pulse})`; g.lineWidth = (d.beam ? 2.4 : 1.6) * this.dpr; g.stroke();
+        continue;
+      }
       const [x, y] = toScreen(d.x, d.z);
       const rr = Math.max(4 * this.dpr, d.radius * scale);
       const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.015);

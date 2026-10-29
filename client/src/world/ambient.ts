@@ -4,16 +4,18 @@ import { mulberry32 } from "./noise";
 import { terrainHeight } from "./terrain";
 import { PAL, hex } from "./toon";
 import { SUN_DIR } from "./sky";
+import type { Tone } from "./daynight";
+import { POND, WATER_Y, GROVE } from "./terrain";
 
-export interface AmbientOut { group: THREE.Group; update(t: number, cam: THREE.Vector3, vpHeight: number): void; }
+export interface AmbientOut { group: THREE.Group; update(t: number, cam: THREE.Vector3, vpHeight: number): void; setTone(tone: Tone): void; }
 
 function pointsMaterial(frag: string, extra: Record<string, THREE.IUniform>, vertBody: string, blending: THREE.Blending = THREE.NormalBlending): THREE.ShaderMaterial {
-  const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uPx: { value: 600 } }, extra]);
+  const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uPx: { value: 600 }, uLamp: { value: 0 }, uNight: { value: 0 } }, extra]);
   return new THREE.ShaderMaterial({
     uniforms, fog: true, transparent: true, depthWrite: false, blending,
     vertexShader: `
       attribute vec4 aSeed; attribute vec3 color;
-      uniform float uTime; uniform vec3 uCam; uniform float uPx;
+      uniform float uTime; uniform vec3 uCam; uniform float uPx; uniform float uLamp; uniform float uNight;
       varying vec3 vCol; varying float vA; varying float vRot;
       #include <common>
       #include <fog_pars_vertex>
@@ -106,7 +108,7 @@ export function buildAmbient(lanterns: THREE.Vector3[], extras: AmbientExtras = 
        wp = uCam + rel; wp.y += 1.0;
        size = 0.34 + aSeed.w * 0.2;
        float e = max(abs(rel.x), abs(rel.z)) / (B*0.5);
-       alpha = (1.0 - smoothstep(0.7, 1.0, e)) * (1.0 - smoothstep(10.0, 15.0, abs(rel.y)));`,
+       alpha = (1.0 - smoothstep(0.7, 1.0, e)) * (1.0 - smoothstep(10.0, 15.0, abs(rel.y))) * (1.0 - 0.8 * uNight);`,
     );
     const p = new THREE.Points(g, m);
     p.frustumCulled = false; p.renderOrder = 4;
@@ -132,8 +134,8 @@ export function buildAmbient(lanterns: THREE.Vector3[], extras: AmbientExtras = 
       `float d = length(pc) * 2.0; float a = pow(smoothstep(1.0, 0.0, d), 2.0); gl_FragColor = vec4(vCol, a * vA);`,
       {},
       `wp = position;
-       size = 2.7 + sin(uTime * 2.0 + aSeed.x * 40.0) * 0.14 + aSeed.y * 0.25;
-       alpha = 0.32 + 0.06 * sin(uTime * 3.1 + aSeed.z * 40.0);`,
+       size = (2.7 + sin(uTime * 2.0 + aSeed.x * 40.0) * 0.14 + aSeed.y * 0.25) * (1.0 + 0.55 * uLamp);
+       alpha = (0.32 + 0.06 * sin(uTime * 3.1 + aSeed.z * 40.0)) * (1.0 + 1.0 * uLamp);`,
     );
     m.fog = false;
     const p = new THREE.Points(g, m);
@@ -164,7 +166,7 @@ export function buildAmbient(lanterns: THREE.Vector3[], extras: AmbientExtras = 
        wp.z += cos(uTime * 1.1 + aSeed.y * 20.0 + life * 4.0) * 0.28 * life;
        size = 0.07 + aSeed.z * 0.05;
        float dc = distance(wp, uCam);
-       alpha = sin(life * 3.14159) * 0.8 * (1.0 - smoothstep(26.0, 48.0, dc));`,
+       alpha = sin(life * 3.14159) * 0.8 * (1.0 - smoothstep(26.0, 48.0, dc)) * (0.7 + 0.9 * uLamp);`,
       THREE.AdditiveBlending,
     );
     m.fog = false;
@@ -202,16 +204,16 @@ export function buildAmbient(lanterns: THREE.Vector3[], extras: AmbientExtras = 
   }
 
   // ---- god rays: camera-facing light shafts slanting along the sun direction, anchored over the shrine / gate / pond ----
+  let raysMat: THREE.ShaderMaterial | null = null;
   const rayAnch = [...(extras.rays ?? []), { x: -6, y: 11, z: -58 }, { x: 8, y: 10, z: -40 }, { x: -26, y: 12, z: -70 }, { x: 40, y: 14, z: 30 }, { x: -30, y: 14, z: 5 }];
   {
     const pos: number[] = [], aT: number[] = [], aS: number[] = [], aD: number[] = [], aP: number[] = [], idx: number[] = [];
-    const dir = SUN_DIR.clone().multiplyScalar(-1);
     rayAnch.forEach((a, i) => {
       for (let k = 0; k < 3; k++) {
         const ox = (rnd() - 0.5) * 7, oz = (rnd() - 0.5) * 7;
         const base = pos.length / 3;
         const w = 1.2 + rnd() * 2.4, L = 20 + rnd() * 12;
-        for (const [t, sd] of [[0, -1], [0, 1], [1, -1], [1, 1]]) { pos.push(a.x + ox, a.y, a.z + oz); aT.push(t); aS.push(sd * w); aD.push(dir.x * L, dir.y * L, dir.z * L); aP.push(rnd() * 6.28 + i); }
+        for (const [t, sd] of [[0, -1], [0, 1], [1, -1], [1, 1]]) { pos.push(a.x + ox, a.y, a.z + oz); aT.push(t); aS.push(sd * w); aD.push(L, 0, 0); aP.push(rnd() * 6.28 + i); }
         idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
       }
     });
@@ -224,10 +226,10 @@ export function buildAmbient(lanterns: THREE.Vector3[], extras: AmbientExtras = 
     g.setIndex(idx);
     const rm = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-      uniforms: { uTime: { value: 0 }, uCol: { value: hex(0xffe9b8) } },
-      vertexShader: `attribute float aT; attribute float aS; attribute vec3 aD; attribute float aP; uniform float uTime; varying float vT; varying float vS; varying float vI;
+      uniforms: { uTime: { value: 0 }, uCol: { value: hex(0xffe9b8) }, uRayDir: { value: SUN_DIR.clone().multiplyScalar(-1) }, uRayK: { value: 1 } },
+      vertexShader: `attribute float aT; attribute float aS; attribute vec3 aD; attribute float aP; uniform float uTime; uniform vec3 uRayDir; varying float vT; varying float vS; varying float vI;
         void main(){
-          vec3 axis = aD; vec3 p = position + axis * aT;
+          vec3 axis = uRayDir * aD.x; vec3 p = position + axis * aT;
           vec3 toCam = normalize(cameraPosition - p);
           vec3 side = normalize(cross(normalize(axis), toCam));
           p += side * aS * (0.55 + 0.9 * aT);
@@ -235,23 +237,24 @@ export function buildAmbient(lanterns: THREE.Vector3[], extras: AmbientExtras = 
           vI = 0.55 + 0.45 * sin(uTime * 0.35 + aP) * sin(uTime * 0.21 + aP * 2.3);
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
         }`,
-      fragmentShader: `uniform vec3 uCol; varying float vT; varying float vS; varying float vI;
+      fragmentShader: `uniform vec3 uCol; uniform float uRayK; varying float vT; varying float vS; varying float vI;
         void main(){
           float across = 1.0 - smoothstep(0.0, 1.0, abs(vS));
           float along = smoothstep(0.0, 0.18, vT) * (1.0 - smoothstep(0.55, 1.0, vT));
-          float a = along * across * vI * 0.16;
+          float a = along * across * vI * 0.16 * uRayK;
           gl_FragColor = vec4(uCol, a);
           #include <colorspace_fragment>
         }`,
     });
+    raysMat = rm; mats.push(rm);
     const rays = new THREE.Mesh(g, rm);
     rays.frustumCulled = false; rays.renderOrder = 4; rays.name = "godrays";
     group.add(rays);
-    mats.push(rm);
   }
 
   // ---- low mist sheets (world-noise, follow the camera) ----
   const sheets: THREE.Mesh[] = [];
+  const sheetMats: THREE.ShaderMaterial[] = [];
   {
     const sg = new THREE.PlaneGeometry(420, 420, 1, 1); sg.rotateX(-Math.PI / 2);
     for (const [y, a, sc, sp] of [[1.1, 0.5, 0.028, 0.5], [3.4, 0.32, 0.019, 0.35], [6.2, 0.2, 0.012, 0.25]] as number[][]) {
@@ -277,9 +280,88 @@ export function buildAmbient(lanterns: THREE.Vector3[], extras: AmbientExtras = 
       });
       const sh = new THREE.Mesh(sg, mm);
       sh.position.y = y; sh.renderOrder = 2; sh.frustumCulled = false; sh.name = "mistsheet";
-      group.add(sh); sheets.push(sh); mats.push(mm);
+      group.add(sh); sheets.push(sh); mats.push(mm); sheetMats.push(mm);
     }
   }
+
+
+  // ---- fireflies: jade-gold motes that blink over the pond, reeds, bamboo grove and path at dusk and night (additive, one draw call) ----
+  {
+    const spots: [number, number, number, number, number][] = [ // cx, cz, radius, count, minY above ground
+      [POND.x, POND.z, 17, 46, 0.5], [(GROVE.x0 + GROVE.x1) / 2, (GROVE.z0 + GROVE.z1) / 2, 24, 56, 0.4], [0, -62, 9, 14, 0.7], [0, 20, 14, 18, 0.5], [8, 66, 9, 12, 0.7],
+    ];
+    const total = spots.reduce((a, b) => a + b[3], 0);
+    const pos = new Float32Array(total * 3), seed = new Float32Array(total * 4), col = new Float32Array(total * 3);
+    const cj = hex(0xc8f0a0), cg = hex(0xf2d98a);
+    let k = 0;
+    for (const [cx, cz, R, n, y0] of spots) {
+      for (let i = 0; i < n; i++, k++) {
+        const a = rnd() * 6.283, rr = Math.sqrt(rnd()) * R;
+        const x = cx + Math.cos(a) * rr, z = cz + Math.sin(a) * rr;
+        const gy = Math.max(terrainHeight(x, z), WATER_Y);
+        pos.set([x, gy + y0 + rnd() * 1.7, z], k * 3);
+        seed.set([rnd(), rnd(), rnd(), rnd()], k * 4);
+        const c = rnd() < 0.6 ? cj : cg; col.set([c.r, c.g, c.b], k * 3);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3)); g.setAttribute("aSeed", new THREE.BufferAttribute(seed, 4)); g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    const m = pointsMaterial(
+      `float d = length(pc) * 2.0; float a = pow(smoothstep(1.0, 0.0, d), 1.7); gl_FragColor = vec4(vCol * (1.0 + 0.7 * smoothstep(0.35, 0.0, d)), a * vA);`,
+      {},
+      `float ph = aSeed.w * 6.283;
+       wp = position;
+       wp.x += sin(uTime * (0.25 + aSeed.x * 0.25) + ph) * 1.6 + sin(uTime * 0.9 + ph * 3.0) * 0.25;
+       wp.z += cos(uTime * (0.21 + aSeed.y * 0.25) + ph * 1.7) * 1.6 + cos(uTime * 0.8 + ph) * 0.25;
+       wp.y += sin(uTime * (0.4 + aSeed.z * 0.3) + ph) * 0.45;
+       float blink = pow(max(0.0, sin(uTime * (0.9 + aSeed.x * 0.9) + ph * 5.0)), 2.0);
+       size = 0.2 + aSeed.z * 0.1;
+       float dc = distance(wp, uCam);
+       float on = smoothstep(0.1, 0.55, uNight + uLamp * 0.25);
+       alpha = blink * on * 0.95 * (1.0 - smoothstep(28.0, 55.0, dc));`,
+      THREE.AdditiveBlending,
+    );
+    m.fog = false;
+    const p = new THREE.Points(g, m);
+    p.frustumCulled = false; p.renderOrder = 5; p.name = "fireflies";
+    group.add(p); mats.push(m);
+  }
+
+  // ---- lantern ground pools: soft warm light pooled on the path under every lantern (additive decals replace extra point lights) ----
+  const pools = (() => {
+    const N = lanterns.length;
+    const geo = new THREE.PlaneGeometry(1, 1); geo.rotateX(-Math.PI / 2);
+    const pm = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+      uniforms: { uLamp: { value: 0 }, uTime: { value: 0 } },
+      vertexShader: `attribute vec3 instCol; varying vec2 vUv; varying vec3 vC; varying float vR; void main(){ vUv = uv; vC = instCol; vec4 ip = instanceMatrix * vec4(position, 1.0); vR = instanceMatrix[0][0]; gl_Position = projectionMatrix * viewMatrix * modelMatrix * ip; }`,
+      fragmentShader: `uniform float uLamp, uTime; varying vec2 vUv; varying vec3 vC; varying float vR;
+        void main(){
+          vec2 q = vUv - 0.5; float d = length(q) * 2.0;
+          float rib = 0.85 + 0.15 * sin(atan(q.y, q.x) * 12.0); // paper-lantern ribs projected on the stone
+          float a = pow(clamp(1.0 - d, 0.0, 1.0), 2.0) * rib * smoothstep(0.3, 0.95, uLamp) * 0.3;
+          gl_FragColor = vec4(vC * a, a);
+          #include <colorspace_fragment>
+        }`,
+    });
+    const im = new THREE.InstancedMesh(geo, pm, Math.max(1, N));
+    const colAttr = new Float32Array(Math.max(1, N) * 3);
+    const M4 = new THREE.Matrix4(), V3 = new THREE.Vector3(), Sc = new THREE.Vector3(), Q = new THREE.Quaternion();
+    lanterns.forEach((l, i) => {
+      const gy = terrainHeight(l.x, l.z);
+      const s = 5.2 + (i % 3) * 0.6;
+      M4.compose(V3.set(l.x, gy + 0.2, l.z), Q, Sc.set(s, 1, s)); im.setMatrixAt(i, M4);
+      const c = i % 7 === 0 ? hex(0xe0553f, 0xf2c06a, 0.5) : hex(0xf2c06a);
+      colAttr.set([c.r, c.g, c.b], i * 3);
+    });
+    geo.setAttribute("instCol", new THREE.InstancedBufferAttribute(colAttr, 3));
+    im.frustumCulled = false; im.renderOrder = 1; im.name = "lanternPools"; im.visible = false;
+    group.add(im);
+    return { im, pm };
+  })();
+
+  let tone: Tone | null = null;
 
   // ---- boss courtyard rune ring ----
   const cv = document.createElement("canvas"); cv.width = cv.height = 512;
@@ -308,8 +390,13 @@ export function buildAmbient(lanterns: THREE.Vector3[], extras: AmbientExtras = 
 
   return {
     group,
+    setTone(tn: Tone) { tone = tn; },
     update(t, cam, vpHeight) {
-      for (const m of mats) { m.uniforms.uTime.value = t; if (m.uniforms.uCam) m.uniforms.uCam.value.copy(cam); if (m.uniforms.uPx) m.uniforms.uPx.value = vpHeight * 0.5; }
+      const lamp = tone?.lamp ?? 0, night = tone?.night ?? 0;
+      pools.pm.uniforms.uLamp.value = lamp; pools.im.visible = lamp > 0.02;
+      if (raysMat) { raysMat.uniforms.uRayK.value = tone?.rays ?? 1; if (tone) { raysMat.uniforms.uRayDir.value.copy(tone.key).multiplyScalar(-1); raysMat.uniforms.uCol.value.copy(tone.sunCol).lerp(hex(0xffffff), 0.35); } }
+      for (const sm of sheetMats) if (tone) sm.uniforms.uCol.value.copy(tone.horizon).lerp(hex(PAL.paper), 0.18 * (1 - night));
+      for (const m of mats) { if (m.uniforms.uLamp) { m.uniforms.uLamp.value = lamp; m.uniforms.uNight.value = night; } m.uniforms.uTime.value = t; if (m.uniforms.uCam) m.uniforms.uCam.value.copy(cam); if (m.uniforms.uPx) m.uniforms.uPx.value = vpHeight * 0.5; }
       for (const sh of sheets) { sh.position.x = cam.x; sh.position.z = cam.z; }
       runeMat.opacity = 0.35 + 0.25 * (0.5 + 0.5 * Math.sin(t * 1.4));
       rune.rotation.z = t * 0.05;

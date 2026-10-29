@@ -7,6 +7,7 @@ import { PROTOCOL_VERSION, TICK_RATE } from "../../shared/protocol.ts";
 import type { ClassId, ClientMsg, ServerMsg } from "../../shared/protocol.ts";
 import { CLASSES, TUNING, ZONE, normalizeProgress } from "./data.ts";
 import { ecoClaim, ecoLogin, ecoTick, initEconomy } from "./economy.ts";
+import { contentHandle, contentLogin, initContent } from "./game/content.ts";
 import { CharacterDb, type CharRow } from "./db.ts";
 import { sendInv } from "./game/inventory.ts";
 import { World } from "./game/world.ts";
@@ -26,6 +27,7 @@ const KILL_BUFFERED = TUNING.killBuffered;
 const db = new CharacterDb(DB_PATH);
 const world = new World();
 initEconomy(DB_PATH); // wallet + daily tables (own tables, own connection to the same sqlite file)
+initContent(DB_PATH); // 0.4.0: equipment, side quests, merit seals, places, titles (own tables, additive)
 world.onQuestChange = (p) => { try { db.saveQuest(p.n, p.quest); } catch (e) { log("quest save failed", e); } };
 world.onMoveKick = (p) => {
   for (const s of sessions) if (s.player === p) { sendMsg(s.ws, { t: "error", msg: "Movement rejected." }); log(`movement kick ${p.n}`); s.ws.close(1008, "movement rejected"); }
@@ -193,11 +195,17 @@ function onMessage(s: Session, data: RawData, isBinary: boolean) {
     case "cast":
       if (p) world.cast(p, msg);
       return;
+    case "dodge":
+      if (p) world.dodge(p, msg);
+      return;
     case "chat":
       if (p && typeof msg.text === "string") world.chat(p, msg.text.slice(0, 400));
       return;
     case "claim":
       if (p) ecoClaim(world, p, msg.id); // validated inside (type, length, on today's board, done, not yet claimed)
+      return;
+    case "equip": case "unequip": case "use": case "npc": case "craft": case "buy": case "sell": case "title":
+      if (p) contentHandle(world, p, msg); // 0.4.0 content messages: every field is validated inside
       return;
   }
 }
@@ -255,6 +263,7 @@ function onLogin(s: Session, msg: Extract<ClientMsg, { t: "login" }>) {
   world.sendXp(p);
   sendInv(p);
   ecoLogin(world, p); // {t:"wallet"} then {t:"daily"}
+  contentLogin(world, p); // {t:"items"}, {t:"gear"}, {t:"sq"}, {t:"prog"}
   if (row.cls !== msg.cls) world.sysTo(p, `Character ${row.name} is a ${CLASSES[row.cls].name}; your saved class was kept.`);
   world.sysTo(p, `Welcome to ${ZONE.name}, ${p.n}.`);
   world.sysAll(`${p.n} has entered the valley.`);

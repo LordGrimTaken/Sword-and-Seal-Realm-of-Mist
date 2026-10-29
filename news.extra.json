@@ -1,8 +1,38 @@
 [
   {
+    "id": "update-0-4",
+    "tag": "Update 0.4",
+    "banner": "blades",
+    "title": "Update 0.4: Dodge, Qi, gear and a cracked-open Guardian",
+    "date": "2026-10-29",
+    "summary": "Roll out of danger with Space, manage your Qi, gear up, and meet a Stone Guardian with a nasty third phase.",
+    "body": "Update 0.4 is here. The launcher will fetch it for you.\n\nDodge and Qi\n- Press Space to roll. You cannot be hurt for a moment mid-roll, so a well-timed dodge beats any slam.\n- Every skill and every dodge now spends Qi, the jade bar under your health. It refills quickly when you pause, so pick your moments.\n- Enemies now warn you before they strike. Watch for red shapes on the ground and step out of them.\n\nGear and quests\n- Equip a weapon, head, body, boots, charm and pendant. Press G to open your gear.\n- Craft potions and gear with Artisan Tao, and shop with Peddler Hao in the plaza.\n- Gate Warden Wu has a chain of side quests, and the Journal (J) tracks them along with merit seals and titles.\n- New creatures roam the valley: Lotus Toads by the pond, packs of Stone Hounds in the north, and a rare grey fox called Old Whisker.\n\nA prettier valley\n- The day now turns to dusk and night, with fireflies, lantern light and wind in the bamboo.\n- Koi swim in the pond and the shore has brush-stroke foam.\n- Press N for a full map of the valley that clears as you explore.\n\nThe Stone Guardian\n- When it drops low, it cracks open and glows white-hot. A beam of runes sweeps around it, so keep moving.\n\nOptions\n- Press F1 for the new settings window: sound mixer, bigger text, colour-blind help and more.\n\nTell us what you think on the support page of the website."
+  },
+  {
     "id": "open-for-testing",
+    "tag": "Announcement",
+    "banner": "valley",
     "title": "Sword and Seal is open for testing",
     "date": "2026-10-28",
-    "body": "The doors of the Realm of Mist are open. Sign in with the launcher, let it fetch the game, and step into the first valley.\n\nWhat to try:\n- Create a character and pick a class.\n- Hunt in the bamboo groves, finish the lantern keeper's errand and meet the first boss.\n- Party up with other testers.\n\nThis is an early test: progress can be reset, and we want to hear what breaks. Tell us on the support page of the website."
+    "summary": "The doors of the Realm of Mist are open. Sign in, let the launcher fetch the game, and step into Cloudmist Valley.",
+    "body": "The doors of the Realm of Mist are open. Sign in with the launcher, let it fetch the game, and step into the first valley.\n\nWhat to try:\n- Create a character and choose a class: Sword Cultivator, Talisman Master or Physician.\n- Hunt in the bamboo groves, finish the lantern keeper's errand and face the Stone Guardian at the ruined shrine.\n- Party up with other testers.\n\nThis is an early test: progress can be reset, and we want to hear what breaks. Tell us on the support page of the website."
+  },
+  {
+    "id": "combat-changes-0-4",
+    "tag": "Coming soon",
+    "banner": "blades",
+    "title": "Combat changes coming in 0.4",
+    "date": "2026-10-27",
+    "summary": "Dodge rolls and a Qi pool are on the way. Every skill will cost Qi, so timing matters more than button mashing.",
+    "body": "Fights are about to get faster and fairer. Version 0.4 brings two big changes.\n\nDodge roll\n- Press Space to roll in the direction you are moving.\n- You are untouchable for a moment mid-roll, so well-timed dodges beat even the Stone Guardian's slam.\n\nQi\n- You now have a Qi pool that refills on its own.\n- Skills and dodges spend Qi. Chaining every skill without a pause will run you dry, so pick your moments.\n\nThe launcher will download 0.4 for you automatically when it is ready."
+  },
+  {
+    "id": "how-to-play",
+    "tag": "Guide",
+    "banner": "scroll",
+    "title": "How to play",
+    "date": "2026-10-26",
+    "summary": "Move with WASD, fight with keys 1 to 4, and speak to villagers with F. A quick guide for your first hour.",
+    "body": "New to the Realm of Mist? Here is everything you need for your first hour.\n\nControls\n- W, A, S, D to move; hold the right mouse button and drag to turn the camera.\n- Tab to target the nearest enemy; 1 to 4 to use your skills.\n- F to speak to villagers, I for your bag, L for your quest log, B for the notice board.\n- Enter to chat, F1 for in-game help.\n\nYour first steps\n- Speak to Elder Lin near the gate to start the quest chain.\n- Fight Bamboo Spirits in the grove to level up, then move on to the fox spirits in the hills.\n- Lantern Keeper Mei needs five Bamboo Fiber for a paper lantern.\n\nStuck or found a bug? Visit the support page of the website."
   }
 ]

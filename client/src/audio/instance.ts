@@ -16,12 +16,18 @@ function safe(): GameAudio {
     ui: wrap("ui", undefined), cast: wrap("cast", undefined), hit: wrap("hit", undefined),
     death: wrap("death", undefined), levelUp: wrap("levelUp", undefined), loot: wrap("loot", undefined),
     mobDeath: wrap("mobDeath", undefined), bossRoar: wrap("bossRoar", undefined),
-    warn: wrap("warn", undefined), impact: wrap("impact", undefined), footstep: wrap("footstep", undefined),
+    warn: wrap("warn", undefined), impact: wrap("impact", undefined), footstep: wrap("footstep", undefined), dodge: wrap("dodge", undefined),
     setListenerIntensity: wrap("setListenerIntensity", undefined),
+    setBusVolume: wrap("setBusVolume", undefined), setBlurMuted: wrap("setBlurMuted", undefined), setBoss: wrap("setBoss", undefined),
+    levels: wrap("levels", { master: 0, music: 0, amb: 0, sfx: 0, ui: 0, muted: false, blurMuted: false, boss: false }),
   };
 }
 
 export const audio: GameAudio = safe();
+
+let hoverTicks = true;
+/** Quiet tick when the pointer enters a button or slot (rate limited per element and globally). */
+export function setHoverTicks(on: boolean) { hoverTicks = on; }
 
 /** First user gesture unlocks WebAudio and starts the ambient bed; also click sounds on buttons. */
 export function installAudioGestures() {
@@ -30,7 +36,15 @@ export function installAudioGestures() {
   window.addEventListener("keydown", unlock, { once: true });
   document.addEventListener("click", (e) => {
     const t = e.target as HTMLElement | null;
-    if (t && t.closest && t.closest("button, .btn, .cc")) audio.ui("click");
+    if (t && t.closest && t.closest("button, .btn, .cc") && !t.closest("[data-quiet]")) audio.ui("click");
+  }, true);
+  let lastHover: Element | null = null;
+  document.addEventListener("pointerover", (e) => {
+    if (!hoverTicks) return;
+    const t = (e.target as HTMLElement | null)?.closest?.("button, .btn, .slot, .jz-tab, .bi, [data-hover]") ?? null;
+    if (t === lastHover) return;
+    lastHover = t;
+    if (t && (e as PointerEvent).pointerType !== "touch") audio.ui("hover");
   }, true);
   let vol = 0.7, muted = false;
   try { vol = parseFloat(localStorage.getItem("jz.vol") ?? "0.7"); muted = localStorage.getItem("jz.mute") === "1"; } catch { /* ignore */ }

@@ -4,6 +4,7 @@ import type { ClassId } from "../../../shared/protocol";
 import { Particles } from "./particles";
 import { drawSymbol, symbolTexture, type SymbolName } from "../world/symbols";
 import { heightAt } from "../world/terrain";
+import { createExtras } from "./extras";
 
 const C = (h: number) => new THREE.Color(h);
 const INK = C(0x1a1a1f), INKS = C(0x3a3a44), PAPER = C(0xf2ead8), PAPERD = C(0xd9cdb0), VERM = C(0xc8372d), VERMB = C(0xff6a4a), JADE = C(0x4fa58b), JADEB = C(0x8fe3c0), GOLD = C(0xc9a227), GOLDB = C(0xffdf7a), MIST = C(0x8fa3ad), MISTL = C(0xcfd9dc), ICE = C(0xbfe6ee);
@@ -88,6 +89,10 @@ function basicMat(additive: boolean, vc = true, map?: THREE.Texture): THREE.Mesh
   return new THREE.MeshBasicMaterial({ vertexColors: vc, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending, map: map ?? null, toneMapped: false, fog: false });
 }
 
+export interface ShapeTelegraph {
+  shape: "cone" | "line"; dir: number; len: number; arc?: number; width?: number;
+  delay: number; sweep?: number; lead?: number; beam?: boolean;
+}
 interface Live { u: number; dur: number; tick: (u: number, dt: number) => void; done: () => void; }
 
 export function createVfx(scene: THREE.Scene): {
@@ -99,6 +104,8 @@ export function createVfx(scene: THREE.Scene): {
   respawn(at: THREE.Vector3): void;
   /** Red/vermilion ground danger zone that fills over `delay` seconds, then flashes and bursts (ink shockwave + dust). Pooled, terrain-conforming. */
   telegraph(at: THREE.Vector3, radius: number, delay: number): void;
+  /** Cone / line ground danger zone in the same red ink style (mob bite / smash, boss beam). A `sweep` rotates the line from `dir` after `lead` s (beam). */
+  telegraphShape(at: THREE.Vector3, o: ShapeTelegraph): void;
   /** Boss slam impact (shockwave, cracks, dust, crack-star symbol). `telegraph` plays this automatically when it fires. */
   bossSlam(at: THREE.Vector3, radius?: number): void;
 } {
@@ -177,6 +184,7 @@ export function createVfx(scene: THREE.Scene): {
     p.needsUpdate = true;
   }
 
+  const extras = createExtras(root, (x, z) => heightAt(x, z));
   const live: Live[] = [];
   /** Timed effect. Remembers whether it was started by a budget-exempt (local) cast so delayed pool grabs inside it follow the same rule. */
   function run(dur: number, tick: (u: number, dt: number) => void, done: () => void = () => {}) {
@@ -304,9 +312,15 @@ export function createVfx(scene: THREE.Scene): {
       h.o.rotation.order = "YXZ"; h.o.rotation.set(0, yaw, Math.PI / 2); h.o.scale.set(1.7, 1, 1.7);
       tint(h.o, PAPER, 1);
       const a = chest(from, 1.0).addScaledVector(d, 0.8), b = chest(to, 1.0);
-      let t = 0;
+      let t = 0, nextGhost = 0.05, ghosts = 0;
+      extras.scorch(from, to, fxBudget.prio);
       fly(h.o, a, b, 30, (p, dt) => {
         t += dt; setA(h.o, 1);
+        if (ghosts < 3 && t > nextGhost) { // afterimage crescents left hanging along the path, fading
+          nextGhost += 0.06; ghosts++;
+          const gh = arcs.get();
+          if (gh) { gh.o.rotation.order = "YXZ"; gh.o.rotation.set(0, yaw, Math.PI / 2); gh.o.position.copy(p); gh.o.scale.set(1.6 - ghosts * 0.1, 1, 1.6); tint(gh.o, ghosts % 2 ? INKS : PAPER, 0.55); run(0.4, (u) => setA(gh.o, 0.55 * (1 - u)), () => gh.release()); }
+        }
         ink.emit(p.x, p.y + rnd(-0.9, 0.9), p.z, -d.x * 1.5, rnd(-0.3, 0.3), -d.z * 1.5, 0.35, 0.3, 0.05, INK, 0.8, 2, 0);
         glow.emit(p.x, p.y + rnd(-0.8, 0.8), p.z, 0, 0.2, 0, 0.3, 0.35, 0.05, JADEB, 0.9, 0, 0);
         h.o.scale.set(1.7 + Math.sin(t * 30) * 0.05, 1, 1.7);
@@ -501,6 +515,7 @@ export function createVfx(scene: THREE.Scene): {
   // =============== hit ===============
   function hit(at: THREE.Vector3, crit: boolean) {
     const p = new THREE.Vector3(at.x, at.y + 1.0, at.z);
+    extras.splat(p, crit);
     decal(new THREE.Vector3(at.x + rnd(-0.4, 0.4), at.y, at.z + rnd(-0.4, 0.4)), crit ? 1.5 : 0.8, crit ? VERM : INK, crit ? 1.4 : 0.8, 0.8);
     if (crit) {
       burst(ink, p, 18, 8, 0.7, 0.5, VERM, 8, 0.4, 1, 1.6);
@@ -680,13 +695,156 @@ export function createVfx(scene: THREE.Scene): {
     });
   }
 
+  // =============== SHAPED TELEGRAPHS (cone / line / rotating beam) ===============
+  // One grid mesh in (u along, v across) space; the vertex shader passes uv through, positions are laid out in world space (terrain-conforming) by layoutWedge.
+  const wedgeMat = () => new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide, fog: false,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    uniforms: {
+      uProg: { value: 0 }, uFlash: { value: 0 }, uAlpha: { value: 1 }, uTime: { value: 0 }, uSeed: { value: 0 }, uLive: { value: 0 }, uBeam: { value: 0 },
+      uVerm: { value: VERM.clone() }, uDeep: { value: C(0x7a1a14) }, uInk: { value: INK.clone() }, uPaper: { value: PAPER.clone() }, uHot: { value: C(0xffb070) },
+    },
+    vertexShader: `varying vec2 vUV; void main(){ vUV = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+    fragmentShader: `
+      uniform float uProg, uFlash, uAlpha, uTime, uSeed, uLive, uBeam; uniform vec3 uVerm, uDeep, uInk, uPaper, uHot; varying vec2 vUV;
+      float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
+      float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h21(i),h21(i+vec2(1,0)),f.x), mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x), f.y); }
+      void main(){
+        float u = vUV.x, v = vUV.y;
+        float wob = (vn(vec2(u * 6.0 + uSeed, uSeed * 1.7)) - 0.5) * 0.09 + (vn(vec2(u * 19.0, uSeed + uTime * 0.5)) - 0.5) * 0.025;
+        float av = abs(v) - wob;
+        if (av > 1.0 || u > 1.0 || u < 0.0) discard;
+        // beam fades toward its far tip; zones close with a brush cap
+        float far = mix(1.0, 1.0 - smoothstep(0.82, 1.0, u), uBeam);
+        float edge = smoothstep(0.8, 0.9, av) * (1.0 - smoothstep(0.97, 1.0, av));
+        float dry = 0.6 + 0.4 * vn(vec2(u * 34.0 + uSeed * 3.0, av * 16.0));
+        float lip = smoothstep(0.92, 0.975, av) * (1.0 - smoothstep(0.975, 1.0, av));
+        float cap = (1.0 - uBeam) * smoothstep(0.9, 0.96, u) * (1.0 - smoothstep(0.985, 1.0, u));
+        // ink wash flooding outwards along the zone, bright leading edge
+        float fill = 1.0 - smoothstep(uProg - 0.03, uProg + 0.01, u);
+        float lead = (1.0 - smoothstep(0.0, 0.035, abs(u - uProg))) * step(0.001, uProg) * step(uProg, 0.995);
+        float flow = 0.8 + 0.2 * vn(vec2(u * 12.0 - uTime * 3.0, v * 3.0));
+        float urgent = smoothstep(0.7, 1.0, uProg) * (0.5 + 0.5 * sin(uTime * 24.0)) * (1.0 - uBeam);
+        float base = 0.2 + 0.08 * vn(vec2(u * 9.0, v * 5.0) + uSeed);
+        vec3 col = uDeep; float a = base;
+        col = mix(col, mix(uVerm, uDeep, 0.3), fill * 0.92); a = max(a, fill * (0.5 + 0.14 * flow));
+        col = mix(col, vec3(1.0, 0.45, 0.32), lead * 0.9 + urgent * 0.25 * fill); a = max(a, lead * 0.95);
+        col = mix(col, uVerm, max(edge * dry, cap)); a = max(a, max(edge * dry, cap) * 0.92);
+        col = mix(col, uInk, lip * 0.75); a = max(a, lip * 0.85);
+        // live beam: hot core stripe with flicker (white-hot centre)
+        float core = (1.0 - smoothstep(0.0, 0.55, av)) * uLive;
+        float flick = 0.8 + 0.2 * sin(uTime * 40.0 + u * 14.0) * vn(vec2(u * 8.0 - uTime * 6.0, 1.0));
+        col = mix(col, uHot, core * 0.9 * flick); col = mix(col, vec3(1.0, 0.95, 0.85), pow(core, 3.0) * 0.85); a = max(a, core * 0.95);
+        a *= far;
+        col = mix(col, mix(vec3(1.0, 0.8, 0.7), uPaper, 0.4), uFlash * 0.8); a = max(a, uFlash * (1.0 - smoothstep(0.7, 1.0, u)) * 0.9);
+        gl_FragColor = vec4(col, clamp(a, 0.0, 1.0) * uAlpha);
+        #include <colorspace_fragment>
+      }`,
+  });
+  const WEDGE_NU = 28, WEDGE_NV = 14;
+  const wedgeIdx = (() => { const idx: number[] = []; for (let i = 0; i < WEDGE_NU; i++) for (let j = 0; j < WEDGE_NV; j++) { const a = i * (WEDGE_NV + 1) + j, b = a + 1, c = a + WEDGE_NV + 1, d = c + 1; idx.push(a, c, b, b, c, d); } return idx; })();
+  const wedgeUV = (() => { const uv: number[] = []; for (let i = 0; i <= WEDGE_NU; i++) for (let j = 0; j <= WEDGE_NV; j++) uv.push(i / WEDGE_NU, -1 + (2 * j) / WEDGE_NV); return new Float32Array(uv); })();
+  const wedgeSlots = Array.from({ length: 8 }, () => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array((WEDGE_NU + 1) * (WEDGE_NV + 1) * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute("uv", new THREE.BufferAttribute(wedgeUV, 2));
+    g.setIndex(wedgeIdx);
+    const m = new THREE.Mesh(g, wedgeMat()); m.frustumCulled = false; m.visible = false; m.renderOrder = 3; root.add(m);
+    return { m, used: false };
+  });
+  /** Lay the zone out in world space (relative to `g`), following the terrain. `d` = facing now (rotates for beams). */
+  function layoutWedge(m: THREE.Mesh, g: THREE.Vector3, o: ShapeTelegraph, d: number) {
+    const pos = (m.geometry as THREE.BufferGeometry).getAttribute("position") as THREE.BufferAttribute;
+    const hw = (o.width ?? 2) / 2, half = (o.arc ?? 1.4) / 2;
+    const back = o.shape === "line" ? hw : 0; // the hit test reaches half a width behind the origin
+    const sd = Math.sin(d), cd = Math.cos(d);
+    let n = 0;
+    for (let i = 0; i <= WEDGE_NU; i++) for (let j = 0; j <= WEDGE_NV; j++) {
+      const u = i / WEDGE_NU, v = -1 + (2 * j) / WEDGE_NV;
+      let lx: number, lz: number;
+      if (o.shape === "line") { const al = -back + u * (o.len + back); lx = sd * al + cd * v * hw; lz = cd * al - sd * v * hw; }
+      else { const a = d + v * half; lx = Math.sin(a) * u * o.len; lz = Math.cos(a) * u * o.len; }
+      const wx = g.x + lx, wz = g.z + lz, y = heightAt(wx, wz);
+      const sl = Math.abs(heightAt(wx + 0.4, wz) - y) + Math.abs(heightAt(wx, wz + 0.4) - y);
+      pos.setXYZ(n++, lx, y - g.y + 0.08 + sl * 0.22, lz);
+    }
+    pos.needsUpdate = true;
+  }
+  function telegraphShape(at: THREE.Vector3, o: ShapeTelegraph) {
+    const slot = wedgeSlots.find((x) => !x.used);
+    if (!slot) return; // pool exhausted: server damage still lands, only the decoration is dropped
+    slot.used = true;
+    const g = new THREE.Vector3(at.x, at.y, at.z);
+    const m = slot.m, u = (m.material as THREE.ShaderMaterial).uniforms;
+    const beam = !!o.beam, lead = o.lead ?? 0, dur = Math.max(0.15, o.delay);
+    // beams also show a faint ghost of where the sweep will end
+    let ghost: (typeof wedgeSlots)[number] | undefined;
+    if (beam && o.sweep) {
+      ghost = wedgeSlots.find((x) => !x.used);
+      if (ghost) {
+        ghost.used = true; const gu = (ghost.m.material as THREE.ShaderMaterial).uniforms;
+        layoutWedge(ghost.m, g, o, o.dir + o.sweep);
+        ghost.m.position.set(g.x, g.y, g.z); ghost.m.scale.set(1, 1, 1); ghost.m.visible = true;
+        gu.uSeed.value = Math.random() * 20; gu.uProg.value = 1; gu.uFlash.value = 0; gu.uAlpha.value = 0; gu.uTime.value = 0; gu.uLive.value = 0; gu.uBeam.value = 1;
+      }
+    }
+    layoutWedge(m, g, o, o.dir);
+    m.position.set(g.x, g.y, g.z); m.scale.set(1, 1, 1); m.visible = true;
+    u.uSeed.value = Math.random() * 20; u.uProg.value = 0; u.uFlash.value = 0; u.uAlpha.value = 0; u.uTime.value = 0; u.uLive.value = 0; u.uBeam.value = beam ? 1 : 0;
+    const TAIL = beam ? 0.45 : 0.5, total = dur + TAIL;
+    let burstDone = false;
+    live.push({
+      u: 0, dur: total,
+      tick: (k, dt) => {
+        const t = k * total;
+        u.uTime.value += dt;
+        if (t < dur) {
+          if (beam) {
+            u.uProg.value = Math.min(1, t / Math.max(0.2, lead * 0.7)); u.uAlpha.value = Math.min(1, t * 5);
+            if (ghost) (ghost.m.material as THREE.ShaderMaterial).uniforms.uAlpha.value = 0.3 * Math.min(1, t * 3);
+            const sweepT = dur - lead, f = clamp01((t - lead) / Math.max(0.1, sweepT));
+            const ang = o.dir + (o.sweep ?? 0) * f;
+            if (t >= lead) {
+              u.uLive.value = Math.min(1, (t - lead) * 8);
+              if (!burstDone) { burstDone = true; ringFx(g, 0.4, 2.4, 0.5, PAPER, false, 0, 0.9); glyphFlash("crack", new THREE.Vector3(g.x, g.y + 3.0, g.z), 2.6, "#ffb070", "#1a1a1f", 0.7, 0.9); }
+              layoutWedge(m, g, o, ang);
+              // embers and ink motes thrown off the beam
+              const sa = Math.sin(ang), ca = Math.cos(ang);
+              for (let i = 0; i < 3; i++) { const along = rnd(1, o.len * 0.95), side = rnd(-0.5, 0.5) * (o.width ?? 2); const px = g.x + sa * along + ca * side, pz = g.z + ca * along - sa * side; glow.emit(px, heightAt(px, pz) + 0.2, pz, rnd(-0.4, 0.4), rnd(1.2, 3.2), rnd(-0.4, 0.4), rnd(0.35, 0.7), rnd(0.18, 0.32), 0.04, i === 0 ? GOLDB : VERMB, 0.9, 0.5, -0.6); }
+              if (Math.random() < 0.5) { const along = rnd(1, o.len * 0.9), px = g.x + sa * along, pz = g.z + ca * along; ink.emit(px, heightAt(px, pz) + 0.15, pz, rnd(-1, 1), rnd(1, 2.5), rnd(-1, 1), rnd(0.4, 0.7), 0.2, 0.05, INK, 0.8, 1.2, 4); }
+            }
+          } else {
+            u.uProg.value = t / dur; u.uAlpha.value = Math.min(1, t * 7); u.uFlash.value = 0;
+          }
+        } else {
+          const f = (t - dur) / TAIL;
+          if (beam) { u.uAlpha.value = 1 - clamp01(f); u.uLive.value = 1 - clamp01(f * 2); if (ghost) (ghost.m.material as THREE.ShaderMaterial).uniforms.uAlpha.value = 0.3 * (1 - clamp01(f)); }
+          else {
+            if (!burstDone) {
+              burstDone = true; u.uProg.value = 1;
+              // a small ink burst thrown out of the zone (the big boss slam effect is reserved for the circle)
+              const sa = Math.sin(o.dir), ca = Math.cos(o.dir);
+              for (let i = 0; i < 16; i++) {
+                const al = rnd(0.3, 1) * o.len, side = o.shape === "line" ? rnd(-0.5, 0.5) * (o.width ?? 2) : rnd(-0.5, 0.5) * (o.arc ?? 1.4) * al;
+                const px = g.x + sa * al + ca * side, pz = g.z + ca * al - sa * side;
+                ink.emit(px, heightAt(px, pz) + 0.15, pz, rnd(-1.4, 1.4) + sa * 2, rnd(1.5, 3.2), rnd(-1.4, 1.4) + ca * 2, rnd(0.3, 0.55), rnd(0.14, 0.26), 0.06, i % 4 === 0 ? VERM : INK, 0.9, 1.6, 8);
+              }
+            }
+            u.uFlash.value = Math.max(0, 1 - f * 4.5); u.uAlpha.value = 1 - clamp01((f - 0.15) / 0.85);
+          }
+        }
+      },
+      done: () => { m.visible = false; slot.used = false; if (ghost) { ghost.m.visible = false; ghost.used = false; } },
+    });
+  }
+
   function cast(skill: number, cls: ClassId, from: THREE.Vector3, to: THREE.Vector3, local = true) {
     fxBudget.prio = local;
     try { castInner(skill, cls, from, to); } finally { fxBudget.prio = true; }
   }
   function castInner(skill: number, cls: ClassId, from: THREE.Vector3, to: THREE.Vector3) {
     if (cls === "sword") swordCast(skill, from, to);
-    else if (cls === "talisman") talismanCast(skill, from, to);
+    else if (cls === "talisman") { extras.bagua(from, fxBudget.prio); talismanCast(skill, from, to); }
     else physicianCast(skill, from, to);
   }
 
@@ -698,7 +856,7 @@ export function createVfx(scene: THREE.Scene): {
       l.tick(l.u, dt);
       if (l.u >= 1) { l.done(); live.splice(i, 1); }
     }
-    ink.update(dt); glow.update(dt); soft.update(dt);
+    ink.update(dt); glow.update(dt); soft.update(dt); extras.update(dt);
   }
-  return { cast, hit, update, levelUp, respawn, telegraph, bossSlam };
+  return { cast, hit, update, levelUp, respawn, telegraph, telegraphShape, bossSlam };
 }

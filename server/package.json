@@ -10,9 +10,12 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
-    "test": "tsx scripts/bots.ts && tsx scripts/economy.ts && tsx scripts/api-test.ts",
+    "test": "node scripts/run-all.mjs",
+    "test:telegraph": "tsx scripts/telegraph.ts",
     "test:economy": "tsx scripts/economy.ts",
-    "test:api": "tsx scripts/api-test.ts",
+    "test:dodge": "tsx scripts/dodge.ts",
+    "test:content": "tsx scripts/content.ts",
+    "test:api": "tsx scripts/api-test.ts && tsx scripts/dodge.ts",
     "soak": "tsx scripts/soak.ts",
     "typecheck": "tsc --noEmit"
   },

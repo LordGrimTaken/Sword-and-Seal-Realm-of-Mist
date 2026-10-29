@@ -53,7 +53,7 @@
     ["win", "mac", "linux"].forEach(function (k) {
       var f = j.files && j.files[k];
       var a = $('[data-dl="' + k + '"]');
-      if (!f) { if (a) { a.setAttribute("aria-disabled", "true"); a.removeAttribute("href"); var l = a.querySelector("[data-dl-label]"); if (l) l.textContent = "Not in this release"; } return; }
+      if (!f) { if (a) { a.setAttribute("aria-disabled", "true"); a.removeAttribute("href"); var l = a.querySelector("[data-dl-label]"); if (l) l.textContent = "Coming soon"; } return; }
       if (f.url && a && /^https:\/\//.test(f.url)) a.setAttribute("href", f.url);
       setText('[data-meta="' + k + '-size"]', human(f.size) || "Unknown");
       setText('[data-meta="' + k + '-sha"]', f.sha256 || "Unknown"); var hs = $('[data-meta="' + k + '-sha"]'); if (hs && f.sha256) hs.classList.add("is-hex");

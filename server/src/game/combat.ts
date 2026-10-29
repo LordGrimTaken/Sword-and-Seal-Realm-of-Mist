@@ -5,14 +5,15 @@ import type { Mob, Player } from "./types.ts";
 import type { World } from "./world.ts";
 import { questOnKill, questOnLoot } from "./quests.ts";
 import { addItem } from "./inventory.ts";
+import { isInvulnerable, spendQi } from "./dodge.ts";
 import { dist, isNum, rand } from "./util.ts";
 
 const aliveMob = (e: unknown): e is Mob => !!e && (e as Mob).k === "mob" && (e as Mob).ai !== "dead" && (e as Mob).hp > 0;
 
 function roll(p: Player, sd: SkillData) {
   const c = CLASSES[p.cls];
-  let amount = attackFor(p.cls, p.lv) * sd.power * rand(0.9, 1.1);
-  const crit = Math.random() < c.crit;
+  let amount = (attackFor(p.cls, p.lv) + p.gear.atk) * sd.power * rand(0.9, 1.1); // 0.4.0: equipment adds flat attack and crit chance
+  const crit = Math.random() < c.crit + p.gear.crit;
   if (crit) amount *= c.critMult;
   return { amount: Math.max(1, Math.round(amount)), crit };
 }
@@ -40,6 +41,7 @@ export function handleCast(world: World, p: Player, msg: { skill: unknown; targe
     if (dist(p.x, p.z, tx, tz) > sd.def.range + TUNING.rangeSlack) return world.sysTo(p, "Target is out of range.");
   }
 
+  if (!spendQi(world, p, sd.def.qi ?? 0, sd.def.name)) return; // Qi is paid only once the cast is valid (range/target checked above)
   p.cdReady[id] = now + sd.def.cooldown;
   p.gcdReady = now + TUNING.gcd;
   p.attackUntil = now + 0.5;
@@ -59,7 +61,7 @@ export function handleCast(world: World, p: Player, msg: { skill: unknown; targe
   } else {
     // self-centered: heal and/or guard
     if (sd.guard) { p.guardUntil = now + sd.guard.dur; p.guardMult = sd.guard.mult; }
-    const spell = attackFor(p.cls, p.lv) * sd.power;
+    const spell = (attackFor(p.cls, p.lv) + p.gear.atk) * sd.power;
     const heal = (t: Player) => healPlayer(world, p, t, Math.round(spell + (sd.healPct ?? 0) * t.mhp));
     heal(p);
     if (sd.healAllies) {
@@ -89,8 +91,10 @@ export function damageMob(world: World, p: Player, m: Mob, amount: number, crit:
 /** Applies damage to a player (guard buff honoured), emits the event, handles death. Used by melee, slams and poison. */
 export function hurtPlayer(world: World, p: Player, raw: number, srcId: number) {
   if (p.st === "dead") return 0;
+  if (isInvulnerable(world, p)) { world.emitTo(p, { k: "dodged", id: p.id }); return 0; } // dodge roll i-frames
   let amount = raw;
   if (world.time < p.guardUntil) amount *= p.guardMult;
+  amount *= 1 - p.gear.def; // 0.4.0: equipment damage reduction
   amount = Math.max(1, Math.round(amount));
   const dealt = Math.min(amount, p.hp);
   p.hp -= dealt;
@@ -178,7 +182,7 @@ export function grantXp(world: World, p: Player, amount: number, src: "kill" | "
     leveled = true;
   }
   if (p.lv >= MAX_LEVEL) p.xp = 0;
-  if (leveled) { p.mhp = maxHpFor(p.cls, p.lv); p.hp = p.mhp; }
+  if (leveled) { p.mhp = maxHpFor(p.cls, p.lv) + p.gear.hp; p.hp = p.mhp; }
   world.emitTo(p, xpEvent(p, amount));
   if (leveled) {
     world.emitTo(p, { k: "levelup", lv: p.lv });

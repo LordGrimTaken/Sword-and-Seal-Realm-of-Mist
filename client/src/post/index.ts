@@ -23,13 +23,14 @@ export function createComposer(renderer: THREE.WebGLRenderer, scene: THREE.Scene
       uFogNear: { value: 26 }, uFogFar: { value: 175 },
       uMist: { value: new THREE.Color(0x8fa3ad) }, uInk: { value: new THREE.Color(0x1a1a1f) }, uPaper: { value: new THREE.Color(0xf2ead8) },
       uTime: { value: 0 }, uRes: { value: new THREE.Vector2(size.x, size.y) },
+      uTint: { value: new THREE.Color(1, 1, 1) }, uNight: { value: 0 }, uCamY: { value: 0 }, uUpRow: { value: new THREE.Vector3(0, 1, 0) }, uTan: { value: new THREE.Vector2(1, 1) },
     },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: `
       #include <common>
       #include <packing>
       uniform sampler2D tColor; uniform sampler2D tDepth;
-      uniform float uNear, uFar, uFogNear, uFogFar, uTime; uniform vec2 uTexel, uRes; uniform vec3 uMist, uInk, uPaper;
+      uniform float uNear, uFar, uFogNear, uFogFar, uTime, uNight, uCamY; uniform vec3 uTint, uUpRow; uniform vec2 uTan; uniform vec2 uTexel, uRes; uniform vec3 uMist, uInk, uPaper;
       varying vec2 vUv;
       float lin(vec2 uv, out float sky){ float d = texture2D(tDepth, uv).x; sky = step(0.99995, d); return -perspectiveDepthToViewZ(d, uNear, uFar); }
       float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -65,6 +66,11 @@ export function createComposer(renderer: THREE.WebGLRenderer, scene: THREE.Scene
         float lq = floor(luma * 3.6 + 0.5) / 3.6;
         vec3 bands = mix(uMist * 0.7, uMist * 1.25 + vec3(0.03, 0.04, 0.05), clamp(lq * 1.1, 0.0, 1.0));
         col = mix(col, mix(col, bands, 0.7), farT * 0.55);
+        // valley mist: exponential height fog rebuilt from depth, so low ground (pond, grove floor, path) fills with haze while ridges stay clear
+        vec3 vpos = vec3((vUv * 2.0 - 1.0) * uTan, -1.0) * d0;
+        float wy = uCamY + dot(uUpRow, vpos);
+        float hfog = (1.0 - exp(-d0 * 0.011)) * smoothstep(6.5, -1.2, wy) * (1.0 - sky0);
+        col = mix(col, uMist * 1.14 + vec3(0.04, 0.045, 0.05) * (1.0 - uNight), clamp(hfog * 0.6, 0.0, 0.6));
         // far layers get a cool shift, near layers keep warm paper highlights
         col = mix(col, col * vec3(0.9, 0.97, 1.1), fogT * 0.5);
         // --- gentle tonal grade: cool shadows, warm paper highlights + a little S-curve for tone separation ---
@@ -75,6 +81,13 @@ export function createComposer(renderer: THREE.WebGLRenderer, scene: THREE.Scene
         // soft shoulder: HDR lantern light / glow cores roll off instead of clipping to white (hue-preserving)
         float pk = max(col.r, max(col.g, col.b));
         if (pk > 0.88) { float kk = (0.88 + (pk - 0.88) / (1.0 + (pk - 0.88) * 1.6)) / pk; col *= kk; }
+        // time-of-day grade (dawn rose-gold, dusk vermilion bleed, night indigo)
+        col *= mix(vec3(1.0), uTint, 0.85);
+        // seal-red spot colour: vermilion props and wounds keep their chroma while the rest of the palette settles a touch
+        float gl = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        float redn = clamp((col.r - max(col.g, col.b)) * 3.4, 0.0, 1.0);
+        col = mix(col, vec3(gl), 0.07 * (1.0 - redn));
+        col = mix(col, vec3(gl) + (col - vec3(gl)) * 1.28, redn * 0.85);
         // --- ink lines ---
         col = mix(col, uInk * 0.9, clamp(edge * 0.62 + ce * 0.32, 0.0, 0.8));
         // --- paper grain + fibres + faint wash blotches ---
@@ -87,8 +100,12 @@ export function createComposer(renderer: THREE.WebGLRenderer, scene: THREE.Scene
         col *= 1.0 + paper * (0.45 + 0.55 * smoothstep(0.1, 0.7, luma));
         col = mix(col, col * uPaper * 1.08, 0.08);
         // --- vignette ---
-        vec2 q = vUv - 0.5; float vg = smoothstep(0.33, 0.95, length(q * vec2(1.0, 1.1)));
+        vec2 q = vUv - 0.5; float rr = length(q * vec2(1.0, 1.1));
+        float torn = vn(px * 0.011 + 5.0) * 0.12 + vn(px * 0.065) * 0.05;   // ragged, fibrous scroll edge
+        float vg = smoothstep(0.33, 0.95, rr + torn * 0.3);
         col = mix(col, col * vec3(0.7, 0.7, 0.75) + uInk * 0.03, vg * 0.6);
+        float tea = smoothstep(0.64, 0.98, rr + torn * 0.5);                // tea-stained paper border
+        col = mix(col, col * vec3(1.06, 0.93, 0.78), tea * 0.26 * (1.0 - uNight * 0.6));
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -106,7 +123,12 @@ export function createComposer(renderer: THREE.WebGLRenderer, scene: THREE.Scene
       mat.uniforms.uTime.value = t;
       mat.uniforms.uNear.value = camera.near; mat.uniforms.uFar.value = camera.far;
       const f = scene.fog as THREE.Fog | null;
-      if (f && (f as THREE.Fog).isFog) { mat.uniforms.uFogNear.value = f.near; mat.uniforms.uFogFar.value = f.far; }
+      if (f && (f as THREE.Fog).isFog) { mat.uniforms.uFogNear.value = f.near; mat.uniforms.uFogFar.value = f.far; mat.uniforms.uMist.value.copy(f.color); }
+      const tone = scene.userData.tone as { tint: THREE.Color; night: number } | undefined;
+      if (tone) { mat.uniforms.uTint.value.copy(tone.tint); mat.uniforms.uNight.value = tone.night; }
+      const me = camera.matrixWorld.elements;
+      mat.uniforms.uCamY.value = me[13]; mat.uniforms.uUpRow.value.set(me[1], me[5], me[9]);
+      mat.uniforms.uTan.value.set(1 / camera.projectionMatrix.elements[0], 1 / camera.projectionMatrix.elements[5]);
       renderer.setRenderTarget(rt);
       renderer.clear();
       renderer.render(scene, camera);

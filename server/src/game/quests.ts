@@ -101,6 +101,7 @@ export function handleCommand(w: World, p: Player, text: string): boolean {
   // a bare `/talk` goes to Elder Lin when she is in reach (the main chain), else to the nearer of Mei and Fen; clients name the NPC they are speaking to
   if (who === "fen" || (!who && !inElder && inFen && (!inMei || dFen < dMei))) { talkFen(w, p); return true; }
   if (who === "mei" || (!who && !inElder)) { talkMei(w, p); return true; }
+  ecoTalk(w, p, "elder"); // 0.4.0: counts for "Walk the Path" and the Know Your Neighbours merit
   const q = p.quest;
   if (q.stage >= QUESTS.length) { say(w, p, QUEST_ALL_DONE); return true; }
   const def = QUESTS[q.stage];

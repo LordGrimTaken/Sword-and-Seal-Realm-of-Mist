@@ -1,8 +1,11 @@
 import { INTEREST_RADIUS, PLAYER_SPEED, SNAPSHOT_RATE, TICK_RATE, WORLD_SIZE } from "../../../shared/protocol.ts";
 import type { ClassId, GameEvent, InvItem, ServerMsg } from "../../../shared/protocol.ts";
-import { NPCS, TUNING, ZONE, maxHpFor } from "../data.ts";
+import { NPCS, QI, TUNING, ZONE, maxHpFor } from "../data.ts";
 import { handleCommand, questProximity } from "./quests.ts";
+import { contentTick } from "./content.ts";
+import { emptyGear } from "./gear.ts";
 import { testCommand } from "./testmode.ts";
+import { dashTick, dodgeCooldownLeft, handleDodge, qiTick } from "./dodge.ts";
 import { handleCast, killPlayer, poisonTick, xpEvent } from "./combat.ts";
 import { SpatialGrid } from "./grid.ts";
 import { spawnMobs, updateMob } from "./mobs.ts";
@@ -74,6 +77,9 @@ export class World {
       quest: info.quest ? { ...info.quest } : { stage: 0, status: 0, progress: 0, progress2: 0, mei: 0 }, nearElder: false,
       inv: new Map((info.inv ?? []).map((i) => [i.item, { ...i }])),
       poisonUntil: 0, poisonNext: 0, poisonDmg: 0, poisonSrc: 0,
+      qi: QI.max, mqi: QI.max, qiResumeAt: 0, qiMsgAt: -99,
+      dodgeReady: 0, dashUntil: 0, dashLeft: 0, dashDx: 0, dashDz: 0, invulnUntil: 0,
+      gear: emptyGear(), potionReady: 0, // 0.4.0 content: equipment bonuses start empty until contentLogin loads the character's gear
     };
     this.entities.set(id, p);
     this.players.set(id, p);
@@ -99,6 +105,7 @@ export class World {
   }
 
   cast(p: Player, msg: { skill: unknown; target?: unknown; tx?: unknown; tz?: unknown }) { handleCast(this, p, msg); }
+  dodge(p: Player, msg: { dx?: unknown; dz?: unknown }) { handleDodge(this, p, msg); }
 
   chat(p: Player, raw: string) {
     const text = Array.from(raw.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ").trim()).slice(0, TUNING.chatMax).join("");
@@ -131,7 +138,7 @@ export class World {
     this.tickNo++;
     this.time += DT;
     for (const p of this.players.values()) this.updatePlayer(p);
-    if (this.tickNo % 10 === 0) for (const p of this.players.values()) if (p.st !== "dead") questProximity(this, p);
+    if (this.tickNo % 10 === 0) for (const p of this.players.values()) if (p.st !== "dead") { questProximity(this, p); contentTick(this, p); }
     for (const m of this.mobs) updateMob(this, m, DT);
     this.rebuildGrid();
     if (this.tickNo % SNAP_EVERY === 0) this.sendSnapshots();
@@ -141,13 +148,19 @@ export class World {
     if (p.st === "dead") {
       if (this.time >= p.respawnAt) {
         p.x = ZONE.spawn.x + rand(-4, 4); p.z = ZONE.spawn.z + rand(-4, 4);
-        p.hp = p.mhp; p.st = "idle"; p.lastHurt = -99; p.inDx = p.inDz = 0; p.poisonUntil = 0; this.resync(p);
+        p.hp = p.mhp; p.st = "idle"; p.lastHurt = -99; p.inDx = p.inDz = 0; p.poisonUntil = 0; p.qi = p.mqi; p.dashLeft = 0; p.invulnUntil = 0; p.dodgeReady = 0; this.resync(p);
         this.sysTo(p, "You return to the plaza, renewed.");
       }
       return;
     }
     poisonTick(this, p);
     if ((p.st as string) === "dead") return;
+    qiTick(this, p, DT);
+    if (dashTick(this, p, DT, this.half)) { // dodge roll: server-driven displacement, exempt from the walking-speed accounting
+      this.resync(p);
+      p.st = "move";
+      return;
+    }
     const fresh = this.time - p.inTime <= TUNING.inputStale;
     const mag = fresh ? Math.hypot(p.inDx, p.inDz) : 0;
     if (mag > 1e-3) {
@@ -201,7 +214,7 @@ export class World {
       const gone: number[] = [];
       for (const id of p.known) if (!cur.has(id)) gone.push(id);
       p.known = cur;
-      p.send(JSON.stringify({ t: "snap", tick: this.tickNo, ack: p.ack, ents, gone } satisfies ServerMsg));
+      p.send(JSON.stringify({ t: "snap", tick: this.tickNo, ack: p.ack, ents, gone, qi: Math.round(p.qi * 10) / 10, mqi: p.mqi, dcd: round2(dodgeCooldownLeft(this, p)) } satisfies ServerMsg));
     }
   }
 

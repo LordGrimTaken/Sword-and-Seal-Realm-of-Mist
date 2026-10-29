@@ -10,6 +10,10 @@ This document is the contract between three parties:
 
 All user-facing strings are English. No CJK anywhere.
 
+## 0. The launcher window (1100x680, frameless)
+
+Full-window painted ink-wash valley (SVG in `renderer/hero.js`, drifting mist and petals on a canvas) with the logo top left, an account card on the left, news cards on the right, and a bottom bar: server status and versions (left), state text with a progress bar showing percent, speed, MB and files (centre), and the big primary button (right). The button flows: Sign in -> Install / Update / Repair -> Downloading (Pause / Resume keeps the `.part` files) -> Verifying -> PLAY -> Launching -> In game. Remember-me stores only the account name. `renderer/mock-bridge.js` (`index.html?mock=1&scene=login|loginerror|register|install|downloading|verifying|ready|update|offline|launching|outdated`) renders every state without Electron. Screenshots: `docs/shots/launcher2_*.png`.
+
 ## 1. Configuration of the launcher
 
 `launcher/config.json` (defaults, shipped inside the launcher):
@@ -85,9 +89,12 @@ Rules:
 
 ```json
 [
-  { "id": "0.3.0", "title": "English localization", "date": "2026-10-28", "body": "Plain text. Blank line = paragraph. Lines starting with '- ' render as bullets." }
+  { "id": "open-for-testing", "tag": "Announcement", "banner": "valley", "title": "Open for testing", "date": "2026-10-28",
+    "summary": "One or two sentences for the news card.", "body": "Plain text. Blank line = paragraph. Lines starting with '- ' render as bullets." }
 ]
 ```
+
+Optional fields: `tag` (chip label, 24 chars), `banner` (painted art: `valley`, `blades`, `scroll` or `lantern`; default rotates), `summary` (card blurb, 300 chars; default = first paragraph of `body`). The launcher shows the newest 4 posts as cards (the first one large); clicking a card opens the full `body`. News is player-facing: it comes from `news.extra.json` at the repo root, NOT from the dev `CHANGELOG.md` (`make-release --news-from-changelog` brings the old behaviour back for experiments).
 
 Array, any order (launcher sorts newest `date` first). `id` unique string. Plain text only (no HTML; the launcher escapes everything). The launcher caches the last good copy in its user data directory and shows it offline.
 

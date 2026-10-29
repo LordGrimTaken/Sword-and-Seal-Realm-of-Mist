@@ -289,7 +289,8 @@ async function setDay(bot: Bot, day: string) {
   bot.send({ t: "chat", text: `/testclock ${hours}` });
   await until(() => bot.dailyMsgs > before && bot.daily!.tasks.map((t) => t.id).join(",") === dailyIdsFor(day).join(","), 3500, 50);
 }
-function findDay(id: string, from = 0): string {
+/** First day AFTER today (UTC) whose board holds `id`: never today, so progress made today cannot leak into the shifted-clock checks. */
+function findDay(id: string, from = 1): string {
   for (let d = from; d < from + 120; d++) { const day = dayKey(Date.now() + d * 86_400_000); if (dailyIdsFor(day).includes(id)) return day; }
   throw new Error("no day with " + id);
 }
@@ -333,7 +334,7 @@ async function serverTests() {
     await F.login(); await F.cmd("/testdrops"); await F.cmd("/testtp -40 10", 300); F.evs.length = 0;
     await F.cmd("/testkill bamboo_spirit 1", 400);
     const fa = F.xpAmounts();
-    check("lv1 killing a bamboo spirit: XP = xpPerLv x mob level x level-difference bonus (12..36)", fa.length >= 1 && fa[0] >= 12 && fa[0] <= 36, fa.join(","));
+    check("lv1 killing a bamboo spirit: XP = xpPerLv x mob level x level-difference bonus (mob lv1-3, from the data table)", fa.length >= 1 && fa[0] >= killXp(MOBS.bamboo_spirit.xpPerLv, 1, 1) && fa[0] <= killXp(MOBS.bamboo_spirit.xpPerLv, 3, 1), fa.join(","));
     F.close();
   }
 

@@ -9,6 +9,8 @@ export type Avatar = {
   root: THREE.Group;
   setState(st: AvState): void;
   update(dt: number): void;
+  /** optional boss phase hint (3 = cracked open, white-hot runes); called every frame by the entity layer */
+  setPhase?(n: number): void;
   height: number;
 };
 

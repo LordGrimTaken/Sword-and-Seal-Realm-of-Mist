@@ -1,4 +1,5 @@
 // Cloudmist Valley terrain: analytic height field + painterly ground texture.
+import { WIND } from "./wind";
 import * as THREE from "three";
 import { clamp, fbm, hash2, lerp, mulberry32, smoothstep, vnoise } from "./noise";
 import { toonGradient } from "./toon";
@@ -225,11 +226,12 @@ export function buildTerrain(): THREE.Mesh {
   const mat = new THREE.MeshToonMaterial({ map, gradientMap: toonGradient() });
   mat.onBeforeCompile = (s) => {
     s.uniforms.uDetail = { value: detail };
+    s.uniforms.uWT = WIND.time;
     s.vertexShader = s.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vWp;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWp = (modelMatrix * vec4(position,1.0)).xyz;");
     s.fragmentShader = s.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vWp; uniform sampler2D uDetail;")
+      .replace("#include <common>", "#include <common>\nvarying vec3 vWp; uniform sampler2D uDetail; uniform float uWT;")
       .replace("#include <map_fragment>", `
         #ifdef USE_MAP
           vec2 gUv = vec2((vWp.x / ${TERRAIN_SIZE.toFixed(1)} + 0.5), (0.5 + vWp.z / ${TERRAIN_SIZE.toFixed(1)}));
@@ -248,6 +250,10 @@ export function buildTerrain(): THREE.Mesh {
           vec3 tint = mix(vec3(0.86, 0.95, 0.9), vec3(1.08, 1.06, 0.92), wash);
           sampledDiffuseColor.rgb *= mix(vec3(1.0), tint * (1.0 + stroke), gNear);
           sampledDiffuseColor.rgb *= 1.0 - smoothstep(0.78, 0.95, s3) * 0.22 * gNear;
+          // drifting cloud shadows: slow low-frequency patches of dimmer, cooler ground that slide across the valley
+          float cl = texture2D(uDetail, vWp.xz * 0.0062 + vec2(uWT * 0.0042, uWT * 0.0016)).r * texture2D(uDetail, vWp.xz * 0.0019 + vec2(0.3, uWT * 0.0008)).r;
+          float cshade = smoothstep(0.36, 0.72, (cl - 0.62) / 0.38) * (1.0 - smoothstep(60.0, 160.0, length(vWp.xz - cameraPosition.xz)) * 0.5);
+          sampledDiffuseColor.rgb *= mix(vec3(1.0), vec3(0.8, 0.87, 0.94), cshade * 0.85);
           diffuseColor *= sampledDiffuseColor;
         #endif`);
   };

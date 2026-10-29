@@ -161,6 +161,23 @@ export class Economy {
     const s = this.state(w, p); s.jade += n;
     this.db.saveWallet(p.n, s.coin, s.jade); this.sendWallet(w, p);
   }
+  /** 0.4.0: pay `n` coin if the player has it (returns false and changes nothing otherwise). */
+  spendCoin(w: World, p: Player, n: number): boolean {
+    n = Math.floor(n); if (!(n >= 0)) return false;
+    const s = this.state(w, p);
+    if (s.coin < n) return false;
+    if (n === 0) return true;
+    s.coin -= n; this.db.saveWallet(p.n, s.coin, s.jade); this.sendWallet(w, p);
+    return true;
+  }
+  spendJade(w: World, p: Player, n: number): boolean {
+    n = Math.floor(n); if (!(n >= 0)) return false;
+    const s = this.state(w, p);
+    if (s.jade < n) return false;
+    if (n === 0) return true;
+    s.jade -= n; this.db.saveWallet(p.n, s.coin, s.jade); this.sendWallet(w, p);
+    return true;
+  }
   /** TEST_MODE: relative wallet change (never below 0). */
   adjust(w: World, p: Player, dCoin: number, dJade: number) {
     const s = this.state(w, p);
@@ -252,10 +269,17 @@ export function initEconomy(dbPath: string, clock?: () => number): Economy { cur
 export const economy = () => current;
 export const ecoLogin = (w: World, p: Player) => current?.login(w, p);
 export const ecoTick = (w: World) => current?.tick(w);
-export const ecoKill = (w: World, p: Player, m: Mob, lvBefore: number) => current?.onKill(w, p, m, lvBefore);
-export const ecoLoot = (w: World, p: Player, item: string, qty: number) => current?.onLoot(w, p, item, qty);
+/** 0.4.0: the content systems (side quests, merit seals) listen to the same gameplay events; registered by game/content.ts, independent of the economy db. */
+export const contentHooks: { kill?: (w: World, p: Player, m: Mob) => void; loot?: (w: World, p: Player, item: string, qty: number) => void; talk?: (w: World, p: Player, npc: string) => void; chain?: (w: World, p: Player) => void } = {};
+export const ecoKill = (w: World, p: Player, m: Mob, lvBefore: number) => { current?.onKill(w, p, m, lvBefore); contentHooks.kill?.(w, p, m); };
+export const ecoLoot = (w: World, p: Player, item: string, qty: number) => { current?.onLoot(w, p, item, qty); contentHooks.loot?.(w, p, item, qty); };
+export const ecoSpendCoin = (w: World, p: Player, n: number) => current?.spendCoin(w, p, n) ?? false;
+export const ecoSpendJade = (w: World, p: Player, n: number) => current?.spendJade(w, p, n) ?? false;
+export const ecoWalletOf = (w: World, p: Player) => current?.wallet(w, p) ?? { coin: 0, jade: 0 };
+export const ecoAddCoin = (w: World, p: Player, n: number) => current?.addCoin(w, p, n);
+export const ecoAddJade = (w: World, p: Player, n: number) => current?.addJade(w, p, n);
 export const ecoXp = (w: World, p: Player, amount: number) => current?.onXp(w, p, amount);
-export const ecoTalk = (w: World, p: Player, npc: string) => current?.onTalk(w, p, npc);
-export const ecoChainComplete = (w: World, p: Player) => current?.onChainComplete(w, p);
+export const ecoTalk = (w: World, p: Player, npc: string) => { current?.onTalk(w, p, npc); contentHooks.talk?.(w, p, npc); };
+export const ecoChainComplete = (w: World, p: Player) => { current?.onChainComplete(w, p); contentHooks.chain?.(w, p); };
 export const ecoClaim = (w: World, p: Player, id: unknown) => current?.claim(w, p, id);
 export const ecoBoard = (w: World, p: Player) => (current ? (current.printBoard(w, p), true) : false);

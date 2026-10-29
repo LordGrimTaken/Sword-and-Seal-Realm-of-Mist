@@ -42,8 +42,20 @@ Spawn plaza with a paifang gate, a pagoda, lantern-lined stone path, stone bridg
 - Physician — support. Skills: 1 Jade Needle, 2 Spring Rain (heal), 3 Purifying Light, 4 Meridian Surge.
 Server owns exact numbers; keep them data-driven in one file.
 
+## Qi and the dodge roll (0.4.0)
+- Every player has a jade **Qi pool** (100, regenerating 10/s after a 0.4 s pause). Each skill costs Qi (shown as a jade badge on its hotbar slot and in its tooltip) and a cast without enough Qi is refused with a clear message, before the cooldown starts. Costs are tuned so that casting everything on cooldown needs ~10.5-11 Qi/s against 10/s regen: the bare rotation is almost sustainable, and dodges (15 Qi) are what drain the pool.
+- **Dodge roll** (Space, any class): a server-driven 6-unit dash over 0.25 s with 0.25 s of invulnerability, 1.5 s cooldown, 15 Qi. Direction = the movement keys, else the facing. A hit that lands during the i-frames is negated and the client shows "Dodged!". The HUD Qi bar sits under the HP bar in the player frame; the Dodge slot follows the four skills on the hotbar.
+- Wire (additive, still protocol v3): client `dodge` message; `snap.qi / mqi / dcd`; `SkillDef.qi`; events `dodge` (roll started, for VFX) and `dodged` (a hit was negated).
+
 ## MVP loop (vertical slice)
 Login → pick name + class → spawn in valley → move with WASD/click → fight mobs with hotbar 1–4 → XP/level → loot messages → chat with other connected players → defeat boss. Multiple players visible in same zone.
 
 ## Out of scope for this slice
-Trading, guilds, housing, crafting, PvP, multiple zones, accounts/passwords, anti-cheat, payments.
+Guilds, housing, player-to-player trading, PvP, multiple zones, accounts/passwords, anti-cheat, payments.
+
+## Settings, mixer and accessibility (0.4.0)
+- **Settings window** (F1 / ?): Controls, Sound, Display, Access tabs on a paper panel. All values live in one versioned object (`jz.settings.v1`, `client/src/ui/settings.ts`) that can be exported and imported as text and reset in one click; the module applies it to the audio buses and to the document (CSS variables and `data-*` flags on `<html>`), so UI code styles itself with plain CSS selectors such as `html[data-contrast="high"]`.
+- **Mixer:** master plus four buses (music, ambience, effects, interface). Reverb sends follow their bus, so a muted bus leaves no tail. The boss layer (war drums, drone, pipa tremolo) is a music stem that enters and leaves on a bar line.
+- **Never colour alone:** pattern cues (hatched Qi bar, striped HP bar, signs on numbers, shapes on map and minimap icons, rarity labels with diamond pips) switch on automatically with a colour-assist mode. Colour assist applies an SVG colour matrix (simulate the deficiency, then shift the lost contrast into visible channels) to the world and the HUD.
+- **Motion and safety:** Reduce motion (defaults from the OS), photosensitivity-safe mode (no hit flash), camera shake slider. Controls are keyboard reachable with visible gold focus rings; chat, loot and warnings are ARIA live regions.
+- **Navigation:** N or a click on the minimap opens the world map (fog of war lifts as you explore, stored per browser). The bag has search, sort and type filters; chat has All / Chat / System tabs.

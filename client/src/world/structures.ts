@@ -7,6 +7,7 @@ import { mulberry32 } from "./noise";
 import { BRIDGE, PLAZA, bridgeY, pathX, terrainHeight } from "./terrain";
 import { PAL, hex, toonGradient } from "./toon";
 import { BANNER_CELL, Signage } from "./signage";
+import { poiMarkers } from "./poi";
 
 const C = {
   wood: hex(PAL.vermilion, PAL.ink, 0.3),
@@ -487,6 +488,7 @@ export function buildStructures(): StructureOut {
   bridge(b, lanterns);
   shrine(b, lanterns, group, smokes, rays);
   plazaDecor(b, smokes);
+  poiMarkers(b, lanterns);
   b.build(group, structureMaterials(), 0.06);
   const sig = SG.build(group);
   SG = null;

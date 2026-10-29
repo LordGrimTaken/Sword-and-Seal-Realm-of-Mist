@@ -51,3 +51,13 @@ NPC entity `Notice Board Keeper Fen` (`k:"npc"`) at x 8, z -85 (inside the plaza
 
 ### Levels and XP (changed numbers)
 Cap **20** (`MAX_LEVEL`); `xpToNext(lv) = round(30 * lv^1.6)` (lv1 30, lv5 394, lv8 836, lv19 3335; 26063 XP in total). At the cap the `xp` event has `xp:0, next:0`. Existing characters are clamped at login (level over 20 becomes 20, XP over the new threshold carries up). Kill XP = `xpPerLv x mobLv x m(d)`, `d = mobLv - playerLv`: d>=0 `1+0.1*min(d,5)`; -2..-1 1.0; -3 0.8, -4 0.6, -5 0.4, -6 0.2, <=-7 0.1 (min 1). Quest XP: chain 100 / 220 / 380 / 1500 (`Quest complete: ... (+N XP)`), Mei's errand `Task complete: Wicks for the Lanterns  (+150 XP)`. Stone Guardian pays 2000 XP at lv8 (`xpPerLv` 250).
+
+## 0.4.0 additions: gear, side quests, crafting, merit (protocol v3, additive)
+Owned by `server/src/game/content.ts` and `server/src/contentdb.ts`. Types are at the end of `shared/protocol.ts`.
+
+Client -> server: `{"t":"equip","item":"Bamboo Weave Hat"}`, `{"t":"unequip","slot":"head"}`, `{"t":"use","item":"Healing Tonic"}`, `{"t":"npc","npc":"wu|tao|hao","a":"talk|accept|turnin","q":"<quest id>"}`, `{"t":"craft","id":"bamboo_hat"}`, `{"t":"buy","item":"...","qty":1}`, `{"t":"sell","item":"...","qty":1}`, `{"t":"title","id":"<title or empty>"}`. Every request is validated on the server (range to the NPC, level, class, materials, wallet, bag space); refusals come back as `error`.
+
+Server -> client:
+- `items` (catalogue of `ItemInfo`, sent once after login), `gear` (`slots` + summed `stats`), `npcdlg` (`npc`, `name`, `role`, `lines`, `quests`, optional `craft` / `buy` / `sell`), `sq` (the player's side quests), `prog` (merit seals, points, worn title, owned titles, places), `toast` (`kind` poi, ach, title, item or quest).
+- `EntityState.ttl` is the worn title shown under a player's name.
+- Login order adds `items`, `gear`, `sq`, `prog` after `daily`.

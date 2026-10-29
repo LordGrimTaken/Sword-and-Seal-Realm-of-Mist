@@ -1,4 +1,5 @@
 import type { ClassId } from "@shared/protocol";
+import { extraItemIcon } from "./gearicons";
 
 /**
  * Hand-drawn brush pictograms (viewBox 48x48). Shapes are filled, tapered brush strokes in paper white (`currentColor`),
@@ -81,4 +82,4 @@ export function itemIconName(item: string): IconName {
   for (const [re, n] of ITEM_RULES) if (re.test(item)) return n;
   return "pouch";
 }
-export function itemIcon(item: string): string { return icon(itemIconName(item)); }
+export function itemIcon(item: string): string { return extraItemIcon(item) ?? icon(itemIconName(item)); }

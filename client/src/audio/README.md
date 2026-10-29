@@ -6,8 +6,18 @@ const audio = createGameAudio();           // no AudioContext yet; every call is
 ```
 
 API (`GameAudio`): `resume, setMasterVolume(0..1), setMuted, isMuted, startAmbient, stopAmbient,
-ui("click"|"open"|"close"|"error"|"chat"|"target"), cast(skill 1..4, cls), hit(crit), death, levelUp,
-loot, mobDeath, bossRoar, warn (boss gong), impact (slam thud), footstep, setListenerIntensity(0..1)`.
+ui("click"|"open"|"close"|"error"|"chat"|"target"|"hover"|"ready"|"tab"|"lowqi"), cast(skill 1..4, cls), hit(crit), death, levelUp,
+loot(tier 0..3), mobDeath, bossRoar, warn (boss gong), impact (slam thud), footstep, dodge, setListenerIntensity(0..1),
+setBusVolume("music"|"amb"|"sfx"|"ui", 0..1), setBlurMuted, setBoss(on), levels()`.
+
+## Mixer (0.4.0)
+`master -> compressor -> soft clip` is fed by four buses: `music` (melody, flute, gong, combat and boss stems), `amb` (wind, water, bamboo, birds, cicadas),
+`sfx` (combat and world one-shots) and `ui` (every `ui()` sound). `setBusVolume` scales a bus relative to its designed level (`Graph.base`), so 1 is the shipped mix.
+The Settings window (F1, Sound tab) drives these through `client/src/ui/settings.ts`, which also stores and applies mute-on-blur and the hover tick.
+- `hit()` keeps a combo counter: hits within 1.5 s climb the pentatonic scale (up to 10 steps).
+- `loot(tier)`: 0 dry click, 1 chime, 2 guzheng arpeggio, 3 gong and bell cascade (`rarityOf(item)` in `ui/itemtips.ts`).
+- Boss layer: `setBoss(true)` arms war drums, a drone and a pipa tremolo (every 4th bar); it starts and stops on a bar line with a cymbal swell. The HUD calls it while the boss bar is visible.
+- `ui("click")` cycles four pitched variants; `ui("open"/"close")` add a paper rustle; `ui("error")` is a muted knock with a soft low dyad.
 
 ## Wiring
 1. First gesture: `addEventListener("pointerdown"|"keydown", () => { audio.resume(); audio.startAmbient(); }, { once: true })`.

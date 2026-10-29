@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { settings } from "../ui/settings";
 
 const CELL = 0.5;
 const MIN_DIST = 1.5;
@@ -148,6 +149,8 @@ export class FollowCamera {
 
   /** Brief screen shake (impact feedback). Amplitude is in world units at the camera; later calls never weaken a stronger shake in progress. */
   shake(amp: number, dur: number) {
+    amp *= settings.get().shake; // player option: 0 turns shake off (Access tab)
+    if (amp <= 0) return;
     if (amp * (dur > 0 ? 1 : 0) < this.shakeAmp * (this.shakeLeft / this.shakeDur)) return;
     this.shakeAmp = amp; this.shakeLeft = dur; this.shakeDur = Math.max(0.01, dur);
   }

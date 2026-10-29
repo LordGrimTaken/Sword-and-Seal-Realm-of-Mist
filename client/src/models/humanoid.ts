@@ -263,6 +263,31 @@ function dressKeeper(r: Rig) {
   r.armR.add(prop);
 }
 
+/** Artisan Tao (0.4.0): a smith's hammer in the right hand and a leather apron over the robe. */
+function dressArtisan(r: Rig) {
+  const prop = node(); prop.position.set(0.04, -0.58, 0.1);
+  const wood = hx(PAL.inkSoft, PAL.gold, 0.25), iron = hx(PAL.inkSoft, PAL.mist, 0.3);
+  const haft = part(new THREE.CylinderGeometry(0.026, 0.03, 0.5, 6), wood, 0.012); haft.position.y = 0.05; prop.add(haft);
+  const hd = part(new THREE.BoxGeometry(0.22, 0.1, 0.1), iron, 0.014); hd.position.set(0, 0.32, 0); prop.add(hd);
+  const band = part(new THREE.BoxGeometry(0.05, 0.12, 0.12), PAL.vermilion, 0); band.position.set(0.07, 0.32, 0); prop.add(band);
+  r.armR.add(prop);
+  const apron = part(new THREE.BoxGeometry(0.34, 0.46, 0.03), hx(PAL.inkSoft, PAL.gold, 0.35), 0.012); apron.position.set(0, 0.22, 0.2); apron.rotation.x = -0.06; r.torso.add(apron);
+  const strap = part(new THREE.BoxGeometry(0.05, 0.36, 0.02), hx(PAL.inkSoft, PAL.gold, 0.35), 0); strap.position.set(0, 0.38, 0.16); strap.rotation.x = 0.1; r.torso.add(strap);
+}
+/** Peddler Hao (0.4.0): a tall wicker pack on the back crammed with bundles, a hanging gourd and a pole over the shoulder. */
+function dressPeddler(r: Rig) {
+  const wicker = hx(PAL.gold, PAL.paperDark, 0.45), wickerD = hx(PAL.gold, PAL.inkSoft, 0.5);
+  const pack = part(new THREE.BoxGeometry(0.46, 0.62, 0.26), wicker, 0.02); pack.position.set(0, 0.34, -0.3); r.torso.add(pack);
+  const frame = part(new THREE.BoxGeometry(0.5, 0.05, 0.3), wickerD, 0.01); frame.position.set(0, 0.64, -0.3); r.torso.add(frame);
+  for (let i = 0; i < 3; i++) {
+    const b = part(new THREE.CylinderGeometry(0.075, 0.075, 0.5, 7), [PAL.vermilion, PAL.jade, hx(PAL.paper, PAL.gold, 0.2)][i], 0.012);
+    b.rotation.z = Math.PI / 2; b.position.set((i - 1) * 0.04, 0.78 + i * 0.1, -0.3); r.torso.add(b);
+  }
+  const pole = part(new THREE.CylinderGeometry(0.02, 0.02, 1.0, 5), wickerD, 0.008); pole.rotation.z = 0.5; pole.position.set(0.05, 0.62, -0.18); r.torso.add(pole);
+  const gourd = part(new THREE.SphereGeometry(0.08, 7, 6), hx(PAL.gold, PAL.vermilion, 0.3), 0.01); gourd.position.set(0.32, 0.28, -0.18); r.torso.add(gourd);
+  const strap = part(new THREE.BoxGeometry(0.04, 0.5, 0.02), wickerD, 0); strap.position.set(0.1, 0.28, 0.1); strap.rotation.z = 0.12; r.torso.add(strap);
+}
+
 // ---- animation ----
 type Style = "slash" | "cast" | "heal" | "none";
 function animate(r: Rig, a: Anim, style: Style, dt: number, L: Look) {
@@ -412,7 +437,17 @@ export function buildClass(cls: ClassId): Avatar {
   return makeAvatar(r, "heal", L, 2.1);
 }
 
-export function buildNpc(variant: "elder" | "keeper" = "elder"): Avatar {
+export function buildNpc(variant: "elder" | "keeper" | "artisan" | "peddler" = "elder"): Avatar {
+  if (variant === "artisan") {
+    const A: Look = { robe: hx(PAL.inkSoft, PAL.vermilion, 0.3), robe2: hx(PAL.paperDark, PAL.inkSoft, 0.3), trim: PAL.gold, inner: PAL.inkSoft, sash: PAL.vermilion, hair: PAL.ink, cuff: PAL.gold, hat: "band", scale: 1.0, cls: "npc", face: "stern", sleeveLen: 0.5 };
+    const ra = buildRig(A); dressArtisan(ra);
+    return makeAvatar(ra, "none", A, 2.05);
+  }
+  if (variant === "peddler") {
+    const H: Look = { robe: hx(PAL.gold, PAL.paperDark, 0.5), robe2: hx(PAL.paper, PAL.gold, 0.3), trim: PAL.vermilion, inner: hx(PAL.inkSoft, PAL.gold, 0.2), sash: PAL.jade, hair: PAL.ink, cuff: hx(PAL.paper, PAL.gold, 0.3), hat: "douli", scale: 0.95, hunch: 0.08, cls: "npc", face: "calm", sleeveLen: 0.55 };
+    const rh = buildRig(H); dressPeddler(rh);
+    return makeAvatar(rh, "none", H, 2.1);
+  }
   if (variant === "keeper") {
     const K: Look = { robe: hx(PAL.ink, PAL.jade, 0.16), robe2: PAL.jade, trim: PAL.jade, inner: PAL.ink, sash: PAL.vermilion, hair: PAL.ink, cuff: PAL.jade, hat: "band", scale: 1, cls: "npc", face: "calm", sleeveLen: 0.62 };
     const rk = buildRig(K); dressKeeper(rk);

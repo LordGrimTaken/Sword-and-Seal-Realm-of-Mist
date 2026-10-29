@@ -21,6 +21,8 @@ export interface Ent {
   outline: THREE.Object3D[];
   shadow: THREE.Object3D[];
   lod: number;
+  /** dodge roll in progress (performance.now() ms): the avatar somersaults forward about its middle */
+  roll?: { start: number; dur: number };
 }
 
 /** Gameplay-camera readability: characters are scaled up modestly; height is updated so plates/rings follow. */
@@ -30,7 +32,7 @@ function makeAvatar(s: EntityState): Avatar {
   let a: Avatar, k: number;
   if (s.k === "player") { a = createCharacterModel(s.cls ?? "sword"); k = SCALE.player; }
   else if (s.k === "mob") { a = createMobModel(s.mob ?? "bamboo_spirit"); k = s.mob === "stone_guardian" ? SCALE.boss : SCALE.mob; }
-  else { a = createNpcModel(/\bFen\b/i.test(s.n) ? "keeper" : "elder"); k = SCALE.npc; }
+  else { a = createNpcModel(/\bFen\b/i.test(s.n) ? "keeper" : /\bTao\b/.test(s.n) ? "artisan" : /\bHao\b/.test(s.n) ? "peddler" : "elder"); k = SCALE.npc; }
   a.root.scale.setScalar(k);
   a.height *= k;
   return a;
@@ -62,6 +64,8 @@ function disposeAvatar(root: THREE.Object3D) {
 export class EntityManager {
   readonly map = new Map<number, Ent>();
   private tmp = { x: 0, z: 0, r: 0 };
+  private qTmp = new THREE.Quaternion();
+  private vTmp = new THREE.Vector3();
 
   constructor(private scene: THREE.Scene, private heightAt: (x: number, z: number) => number, private myId: () => number) {}
 
@@ -77,6 +81,7 @@ export class EntityManager {
         this.map.set(s.id, e);
         e.y = this.heightAt(s.x, s.z);
         avatar.root.position.set(s.x, e.y, s.z);
+        avatar.root.rotation.order = "YXZ"; // yaw first, so the roll somersault (rotation.x) never disturbs the facing
         avatar.root.rotation.y = s.r;
       }
       e.s = s;
@@ -90,6 +95,12 @@ export class EntityManager {
     this.scene.remove(e.avatar.root);
     disposeAvatar(e.avatar.root);
     this.map.delete(id);
+  }
+
+  /** Dodge roll: the avatar flips forward once over `durMs`. */
+  startRoll(id: number, now: number, durMs: number) {
+    const e = this.map.get(id);
+    if (e && e.s.k === "player") e.roll = { start: now, dur: durMs };
   }
 
   markAttack(id: number, now: number) {
@@ -124,6 +135,19 @@ export class EntityManager {
       if (d > Math.PI) d -= Math.PI * 2;
       if (d < -Math.PI) d += Math.PI * 2;
       root.rotation.y += d * Math.min(1, animDt * 16);
+      if (e.roll && !e.dead) {
+        const u = (now - e.roll.start) / e.roll.dur;
+        if (u >= 1) { e.roll = undefined; root.rotation.x = 0; }
+        else {
+          const k = u < 0 ? 0 : u * u * (3 - 2 * u); // smoothstep: a full turn over the roll
+          root.rotation.x = k * Math.PI * 2;
+          // pivot about the middle of the body instead of the feet, and stay low while tumbling
+          this.qTmp.setFromEuler(root.rotation);
+          const half = e.avatar.height * 0.5;
+          this.vTmp.set(0, half, 0).applyQuaternion(this.qTmp);
+          root.position.set(e.x - this.vTmp.x, e.y + half * 0.8 - this.vTmp.y, e.z - this.vTmp.z);
+        }
+      } else if (e.roll) { e.roll = undefined; root.rotation.x = 0; }
       const st = e.dead ? "dead" : now < e.attackUntil || e.s.st === "attack" ? "attack" : moving ? "move" : "idle";
       if (cam) {
         // distance LOD (draw-call budget): ink hull only up close, shadow blob mid-range, body to mid-far, then skipped entirely.
@@ -140,6 +164,7 @@ export class EntityManager {
         }
       }
       e.avatar.setState(st);
+      e.avatar.setPhase?.(!e.dead && e.s.mob === "stone_guardian" && e.s.hp / Math.max(1, e.s.mhp) < 0.25 ? 3 : 0);
       e.avatar.update(animDt);
     }
   }

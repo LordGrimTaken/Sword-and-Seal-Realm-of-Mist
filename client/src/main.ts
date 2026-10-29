@@ -10,7 +10,8 @@ import { connectAndLogin, reconnectWithBackoff, RECONNECT_DELAYS_MS } from "./ne
 import { Game, type DebugState } from "./game/game";
 import { LoginScreen, type LoginValues } from "./ui/login";
 import { detectLauncher, isKnownCharacter, rememberCharacter, type LauncherCtx } from "./net/launcher";
-import { installAudioGestures } from "./audio/instance";
+import { installAudioGestures, audio } from "./audio/instance";
+import "./ui/settings";
 
 installAudioGestures();
 
@@ -41,6 +42,8 @@ const jz = {
   get renderer() { return game ? game.renderer : null; },
   get scene() { return game ? game.scene : null; },
   get launcher(): boolean { return launcher !== null; },
+  /** Mixer state (master/music/amb/sfx/ui levels, mute, boss layer) for UI tests. */
+  get audio() { return audio.levels(); },
   get screen(): string { return game ? "game" : "login"; },
   /** Feed a fabricated server message through the normal handler (UI tests for events the server rarely emits). */
   inject(m: ServerMsg): void { game?.handle(m); },

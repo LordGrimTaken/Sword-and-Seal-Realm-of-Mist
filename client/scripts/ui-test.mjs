@@ -260,6 +260,60 @@ try {
   check("1280x720 HUD: nothing off-screen", offscreen(R, 1280, 720).length === 0, offscreen(R, 1280, 720).join(","));
   await shot("hud_1280x720");
 
+  // ---- 3a2. 0.4.0 Qi pool + dodge roll
+  {
+    let q = (await st()).qi;
+    check("Qi bar shows the server pool (Qi n / 100, jade fill)", !!q && /^Qi \d+ \/ 100$/.test(q.text) && q.max === 100 && q.fill > 0.5, q && q.text);
+    const costs = await page.evaluate(() => [...document.querySelectorAll("#hotbar .slot .qc")].map((e) => e.textContent));
+    check("hotbar slots show Qi costs (4 skills + dodge)", costs.length === 5 && costs.every((c) => /^\d+$/.test(c)), costs.join(","));
+    const tip2 = await page.evaluate(async () => { const el = document.querySelectorAll("#hotbar .slot")[0]; el.dispatchEvent(new PointerEvent("pointerenter")); await new Promise((r) => setTimeout(r, 100)); return document.getElementById("tip").innerText; });
+    check("skill tooltip lists the Qi cost", /\d+ Qi/.test(tip2), JSON.stringify(tip2.slice(0, 70)));
+    await page.mouse.move(640, 300);
+    await say("/testqi 0 90"); // held 90 s: a loaded host can take far longer than the default 6 s between here and the Space press
+    for (let i = 0; i < 40 && (await st()).qi.qi > 1; i++) await sleep(250);
+    q = (await st()).qi;
+    check("Qi bar empties; every costed slot greys out", q.qi < 6 && q.fill < 0.08 && q.low && q.slots.every((x) => x.short), JSON.stringify(q.slots.map((x) => +x.short)));
+    const r0 = (await st()).dodge.rolls;
+    const focus = await page.evaluate(() => { const a = document.activeElement; const t = a ? a.tagName + "#" + a.id : "none"; if (a && a !== document.body && a.blur) a.blur(); return t; });
+    await page.keyboard.press("Space");
+    for (let i = 0; i < 20 && !(await st()).lastRefusal; i++) await sleep(100);
+    const refusal = (await st()).lastRefusal;
+    check("dodge refused with no Qi: no roll, clear message", (await st()).dodge.rolls === r0 && /Not enough Qi/.test(refusal), JSON.stringify(refusal) + " focus " + focus + " qi " + (await st()).qi.qi);
+    await say("/testqi 100");
+    for (let i = 0; i < 40 && (await st()).qi.qi < 99; i++) await sleep(250);
+    await sleep(1600);
+    const before = await st();
+    await page.keyboard.down("KeyW");
+    await sleep(250);
+    // press Space twice inside one page task so frame stalls on a loaded host cannot let the cooldown expire in between
+    const two = await page.evaluate(() => {
+      const press = () => window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", bubbles: true, cancelable: true }));
+      const s0 = window.__jz.state.dodge.rolls; press(); const s1 = window.__jz.state.dodge; press(); const s2 = window.__jz.state.dodge;
+      return { s0, s1, s2 };
+    });
+    await page.keyboard.up("KeyW");
+    let minQi = 100;
+    for (let i = 0; i < 40; i++) { minQi = Math.min(minQi, (await st()).qi.qi); await sleep(50); } // Qi regenerates 10/s, so catch the dip right after the roll
+    await sleep(500);
+    const after = await st();
+    check("Space rolls once (prediction counter)", two.s1.rolls === two.s0 + 1 && after.dodge.rolls === before.dodge.rolls + 1);
+    check("second Space inside the cooldown does nothing", two.s2.rolls === two.s1.rolls);
+    check("roll covered ~6 units (predicted dash steps)", after.dodge.lastDist > 5.4 && after.dodge.lastDist < 6.6, `${after.dodge.lastDist}u`);
+    check("dodge costs Qi on the HUD (about 15 less than a full pool)", minQi < 95 && minQi > 70, `lowest qi after the roll ${minQi}`);
+    check("dodge cooldown shown on the dodge slot right after the press", two.s1.cooldownMs > 1000 && two.s1.cooldownMs <= 1500, `${two.s1.cooldownMs} ms left`);
+    await sleep(1800);
+    const pos0 = (await st()).pos;
+    await page.keyboard.press("Space");
+    await sleep(2500);
+    const stN = await st();
+    check("idle roll goes along the facing; server and prediction agree afterwards (no snap)", stN.dodge.rolls === after.dodge.rolls + 1 && Math.hypot(stN.pos.x - pos0.x, stN.pos.z - pos0.z) > 4.5 && stN.predErr < 1.5, `moved ${Math.hypot(stN.pos.x - pos0.x, stN.pos.z - pos0.z).toFixed(1)}u predErr ${stN.predErr}`);
+    // "Dodged!" feedback comes from the server when i-frames negate a hit
+    await page.evaluate(() => window.__jz.inject({ t: "ev", e: { k: "dodged", id: window.__jz.state.myId } }));
+    await sleep(250);
+    check("a `dodged` event shows 'Dodged!' and counts", (await st()).dodge.dodged === 1 && (await page.locator(".fl", { hasText: "Dodged!" }).count()) >= 1);
+    await sleep(2500);
+  }
+
   // ---- 3b. bag (inv message), loot toast, boss telegraph warning (fabricated through the debug inject hook)
   check("bag button visible in the HUD", await page.evaluate(() => { const b = document.getElementById("bagbtn"); return !!b && b.getBoundingClientRect().width > 20; }));
   s = await st();
@@ -291,6 +345,25 @@ try {
   await shot("telegraph");
   await sleep(7500);
   check("telegraph resolves and clears", (await st()).dangers === 0);
+  // 0.4.0 shaped telegraphs (cone / line / sweeping beam): additive `telegraph` fields, same red ink style
+  {
+    const inj = (extra, delay) => page.evaluate(({ x, z, extra, delay }) => window.__jz.inject({ t: "ev", e: { k: "telegraph", src: 99999, x, z, radius: 4, delay, ...extra } }), { ...s.pos, extra, delay });
+    // Long wind-ups (10 s) and one evaluate for both: at ~5-10 fps on software GL a page.evaluate can take seconds, so short
+    // telegraphs used to expire (and be removed) before the check ran, which looked like a missing cone.
+    await inj({ shape: "cone", dir: 0, arc: 1.45 }, 10);
+    await inj({ shape: "line", dir: 1.2, len: 4, width: 1.9 }, 10);
+    let shapes = [];
+    for (let i = 0; i < 20 && !(shapes.includes("cone") && shapes.includes("line")); i++) { await sleep(150); shapes = (await st()).dangerShapes; }
+    check("cone and line telegraphs register as shaped danger zones", shapes.includes("cone") && shapes.includes("line"), JSON.stringify(shapes));
+    for (let i = 0; i < 80 && (await st()).dangers > 0; i++) await sleep(250);
+    check("shaped telegraphs resolve and clear", (await st()).dangers === 0);
+    await inj({ shape: "line", dir: 0.3, len: 28, width: 2.8, sweep: 1.5708, lead: 0.9, beam: true }, 10.9);
+    let beamOk = false;
+    for (let i = 0; i < 20 && !beamOk; i++) { await sleep(150); beamOk = await page.evaluate(() => /Rune beam/i.test(document.getElementById("warn").innerText)) && (await st()).dangerShapes.includes("beam"); }
+    check("beam telegraph shows the 'Rune beam!' warning and registers a beam", beamOk);
+    for (let i = 0; i < 80 && (await st()).dangers > 0; i++) await sleep(250);
+    check("beam telegraph clears after its sweep", (await st()).dangers === 0);
+  }
 
   // ---- 3c. wallet pill
   R = await rects();
@@ -302,7 +375,7 @@ try {
   await page.waitForFunction((w) => window.__jz.state.wallet.coin >= w.coin + 120 && window.__jz.state.wallet.jade >= w.jade + 3, w0, { timeout: 60000 });
   check("wallet message updates the pill state", true, JSON.stringify((await st()).wallet));
   check("gain shows a floating +120 and a pulse", await page.evaluate(() => /\+120/.test(window.__wf.float) && window.__wf.pulse), JSON.stringify(await page.evaluate(() => window.__wf)));
-  await page.waitForFunction(() => document.querySelector("#wallet .wc.coin .wn").textContent.replace(/,/g, "") === String(window.__jz.state.wallet.coin), null, { timeout: 10000 });
+  await page.waitForFunction(() => document.querySelector("#wallet .wc.coin .wn").textContent.replace(/,/g, "") === String(window.__jz.state.wallet.coin), null, { timeout: 40000 });
   check("number ticks up to the new balance", true, await page.textContent("#wallet .wc.coin .wn"));
   await shot("wallet");
   R = await rects();
@@ -397,6 +470,176 @@ try {
   await sleep(200);
   check("help overlay opens with ?", (await st()).helpOpen);
   await page.keyboard.press("Escape");
+
+  // ---- 4b. 0.4.0 batch 3: settings window, mixer, accessibility, chat tabs, bag tools, world map, action bar polish
+  const SHOT3 = (n, clip) => page.screenshot({ path: path.join(SHOTS, `batch3_ui_test_${n}.png`), timeout: 150000, ...(clip ? { clip } : {}) });
+  const jclick = (sel) => page.evaluate((s) => document.querySelector(s).click(), sel);
+  const jcheck = (sel, on = true) => page.evaluate(([s, o]) => { const e = document.querySelector(s); if (e.checked !== o) e.click(); }, [sel, on]);
+  const jsel = (sel, val) => page.evaluate(([s, v]) => { const e = document.querySelector(s); e.value = v; e.dispatchEvent(new Event("change", { bubbles: true })); }, [sel, val]);
+  const jhover = (sel) => page.evaluate((s) => document.querySelector(s).dispatchEvent(new PointerEvent("pointerover", { bubbles: true })), sel);
+  await page.evaluate(() => { try { localStorage.removeItem("jz.settings.v1"); } catch { /* ignore */ } });
+  await page.keyboard.press("F1");
+  await sleep(450);
+  const tabs = await page.evaluate(() => [...document.querySelectorAll("#help .jz-tab")].map((b) => b.textContent));
+  check("F1 opens the settings window on Controls with four tabs", (await st()).helpOpen && tabs.join(",") === "Controls,Sound,Display,Access" && (await page.evaluate(() => /Dodge roll/.test(document.getElementById("help").innerText))), tabs.join(","));
+  check("controls tab lists the new map key N", await page.evaluate(() => /World map/.test(document.getElementById("help").innerText)));
+  await SHOT3("settings_controls");
+  await jclick('#help [data-tab="sound"]');
+  await sleep(200);
+  const sl = await page.evaluate(() => [...document.querySelectorAll('#help [data-pane="sound"] input[type=range]')].filter((e) => e.offsetParent).map((e) => e.id));
+  check("sound tab has five mixer sliders (master, music, ambience, effects, interface)", sl.join(",") === "s-master,s-music,s-amb,s-sfx,s-ui", sl.join(","));
+  await page.evaluate(() => { const e = document.getElementById("s-music"); e.value = "30"; e.dispatchEvent(new Event("input", { bubbles: true })); const m = document.getElementById("s-ui"); m.value = "0"; m.dispatchEvent(new Event("input", { bubbles: true })); });
+  await sleep(150);
+  const lv = await page.evaluate(() => ({ a: window.__jz.audio, saved: JSON.parse(localStorage.getItem("jz.settings.v1") || "{}") }));
+  check("mixer sliders reach the audio buses and persist (versioned)", Math.abs(lv.a.music - 0.3) < 0.01 && lv.a.ui === 0 && lv.saved.v === 1 && Math.abs(lv.saved.vol.music - 0.3) < 0.01, JSON.stringify(lv.a));
+  check("music readout shows a percentage", (await page.textContent('#help output[data-for="s-music"]')) === "30%");
+  await page.evaluate(() => { const m = document.getElementById("s-ui"); m.value = "100"; m.dispatchEvent(new Event("input", { bubbles: true })); const e = document.getElementById("s-music"); e.value = "100"; e.dispatchEvent(new Event("input", { bubbles: true })); });
+  await SHOT3("settings_sound");
+  await jclick('#help [data-tab="display"]');
+  await sleep(200);
+  await SHOT3("settings_display");
+  await jclick('#help [data-ts="1.5"]');
+  await sleep(200);
+  check("text size 150% scales the reading windows", (await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--tz").trim())) === "1.5" && (await page.evaluate(() => { const r = document.querySelector("#help .hp").getBoundingClientRect(); return r.width <= window.innerWidth && r.height <= window.innerHeight; })));
+  await SHOT3("settings_text150");
+  await jclick('#help [data-ts="1"]');
+  await jclick('#help [data-tab="access"]');
+  await sleep(200);
+  await jsel("#s-cb", "deutan");
+  await jcheck("#s-contrast");
+  await jcheck("#s-motion");
+  await sleep(250);
+  const acc = await page.evaluate(() => ({ cb: document.documentElement.dataset.cb, cues: document.documentElement.dataset.cues, hc: document.documentElement.dataset.contrast, mo: document.documentElement.dataset.motion, filter: !!document.getElementById("jz-cb-deutan"), css: getComputedStyle(document.getElementById("hud")).filter }));
+  check("colour assist installs an SVG filter, turns on pattern cues and filters the HUD", acc.cb === "deutan" && acc.cues === "1" && acc.filter && /jz-cb-deutan/.test(acc.css), JSON.stringify(acc));
+  check("high contrast and reduce-motion set their document flags", acc.hc === "high" && acc.mo === "reduced");
+  check("Qi bar carries a hatch pattern when cues are on (not colour alone)", await page.evaluate(() => /repeating-linear-gradient/.test(getComputedStyle(document.querySelector("#pframe .bar.qi > i")).backgroundImage)));
+  await SHOT3("settings_access");
+  await page.keyboard.press("Escape");
+  await sleep(300);
+  await SHOT3("hud_colourblind_contrast", { x: 0, y: 0, width: 640, height: 260 });
+  // export / import round trip, then reset
+  await page.keyboard.press("F1");
+  await sleep(300);
+  await jclick('#help [data-tab="access"]');
+  await jclick("#s-exp");
+  const exp = await page.inputValue("#s-json");
+  let expOk = false; try { const o = JSON.parse(exp); expOk = o.v === 1 && o.cb === "deutan" && o.contrast === true; } catch { /* bad */ }
+  check("Export writes the settings as versioned JSON", expOk, exp.slice(0, 60).replace(/\n/g, " "));
+  await jclick("#s-reset");
+  await sleep(200);
+  check("Reset restores the defaults", (await page.evaluate(() => document.documentElement.dataset.cb)) === "off" && (await page.evaluate(() => document.documentElement.dataset.contrast)) === "normal");
+  await page.fill("#s-json", exp);
+  await jclick("#s-imp");
+  await sleep(200);
+  check("Import restores the exported settings", (await page.evaluate(() => document.documentElement.dataset.cb)) === "deutan" && (await page.textContent("#s-msg")) === "Settings imported.");
+  await page.fill("#s-json", "{nope");
+  await jclick("#s-imp");
+  check("Import rejects bad text without changing anything", /not valid/.test(await page.textContent("#s-msg")) && (await page.evaluate(() => document.documentElement.dataset.cb)) === "deutan");
+  await jclick("#s-reset");
+  await page.keyboard.press("Escape");
+  await sleep(200);
+
+  // chat tabs
+  await page.evaluate(() => {
+    window.__jz.inject({ t: "ev", e: { k: "chat", from: "Mei", text: "Hello valley", sys: false } });
+    window.__jz.inject({ t: "ev", e: { k: "chat", from: "System", text: "The lanterns flicker.", sys: true } });
+  });
+  await sleep(250);
+  const vis = (tab) => page.evaluate((t) => { document.querySelector(`#chattabs [data-ct="${t}"]`).click(); const l = [...document.querySelectorAll("#chatlog .ln")].filter((e) => e.offsetParent !== null); return { n: l.length, sys: l.filter((e) => e.classList.contains("sys")).length }; }, tab);
+  const vAll = await vis("all"), vChat = await vis("chat"), vSys = await vis("sys");
+  check("chat tabs filter: All shows both, Chat hides system lines, System shows only them", vAll.sys > 0 && vAll.n > vAll.sys && vChat.sys === 0 && vChat.n >= 1 && vSys.n === vSys.sys && vSys.n >= 1, JSON.stringify({ vAll, vChat, vSys }));
+  await vis("chat");
+  await page.evaluate(() => window.__jz.inject({ t: "ev", e: { k: "chat", from: "System", text: "A bell tolls.", sys: true } }));
+  await sleep(150);
+  check("an unseen system line lights the System tab dot while on another tab", await page.evaluate(() => !document.querySelector('#chattabs [data-ct="sys"] .ud').hidden));
+  await vis("sys");
+  check("opening the tab clears its dot", await page.evaluate(() => document.querySelector('#chattabs [data-ct="sys"] .ud').hidden));
+  await page.evaluate(() => { document.querySelector('#chattabs [data-ct="all"]').click(); });
+  await page.keyboard.press("F1"); await sleep(250);
+  await jclick('#help [data-tab="display"]');
+  await jcheck("#s-stamps");
+  await page.evaluate(() => { const e = document.getElementById("s-chatsize"); e.value = "15"; e.dispatchEvent(new Event("input", { bubbles: true })); });
+  await sleep(200);
+  check("chat timestamps and chat text size options apply", await page.evaluate(() => { const t = document.querySelector("#chatlog .ln"); return getComputedStyle(t, "::before").content.length > 3 && getComputedStyle(document.getElementById("chatlog")).fontSize === "15px"; }));
+  // floating numbers: heals on myself, toggled off and on
+  const healCount = async (amount) => { await page.evaluate((a) => { const me = window.__jz.state.myId; window.__jz.inject({ t: "ev", e: { k: "heal", src: me, dst: me, amount: a, skill: 2 } }); }, amount); await sleep(200); return page.locator(".fl.heal").count(); };
+  const h0 = await healCount(7);
+  await jcheck("#s-d-heal", false);
+  const h1 = await healCount(8);
+  await jcheck("#s-d-heal", true);
+  const h2 = await healCount(9);
+  check("floating-number toggles: healing numbers can be switched off and on", h0 >= 1 && h1 === h0 && h2 > h1, `${h0} ${h1} ${h2}`);
+  await jclick("#s-reset");
+  await page.keyboard.press("Escape");
+  await sleep(200);
+
+  // bag tools
+  await page.evaluate(() => window.__jz.inject({ t: "inv", items: [{ item: "Healing Tonic", itemZh: "", qty: 2 }, { item: "Fox Tail", itemZh: "", qty: 3 }, { item: "Jade Scale", itemZh: "", qty: 1 }, { item: "Bamboo Fiber", itemZh: "", qty: 9 }, { item: "Cloudmist Pendant", itemZh: "", qty: 1 }] }));
+  await page.keyboard.press("i");
+  await sleep(350);
+  const bagView = () => page.evaluate(() => [...document.querySelectorAll("#bag .bi")].map((e) => e.dataset.item));
+  const allRows = await bagView();
+  await page.fill("#bag .bsearch", "fox");
+  const foxRows = await bagView();
+  await page.fill("#bag .bsearch", "");
+  await jclick('#bag [data-sort="qty"]');
+  const byQty = await bagView();
+  await jclick('#bag [data-sort="name"]');
+  const byName = await bagView();
+  await jclick('#bag [data-filter="Consumable"]');
+  const remedies = await bagView();
+  await jclick('#bag [data-filter="all"]');
+  await jclick('#bag [data-sort="rarity"]');
+  const byRar = await bagView();
+  check("bag search narrows the list", allRows.length >= 5 && foxRows.length === 1 && foxRows[0] === "Fox Tail", JSON.stringify(foxRows));
+  check("bag sorts by amount, name and rarity", byQty[0] === "Bamboo Fiber" && byName.join() === [...byName].sort((a, b) => a.localeCompare(b)).join() && byRar[0] === "Cloudmist Pendant", `${byQty[0]} / ${byName[0]} / ${byRar[0]}`);
+  check("bag filter chips show only remedies", remedies.length === 1 && remedies[0] === "Healing Tonic", JSON.stringify(remedies));
+  await jclick('#bag [data-sort="recent"]');
+  await jhover('#bag .bi[data-item="Cloudmist Pendant"]');
+  await sleep(250);
+  const itip = await page.evaluate(() => { const t = document.getElementById("itip"); return { shown: getComputedStyle(t).display !== "none", text: t.innerText }; });
+  check("hovering an item shows a tooltip with rarity and type", itip.shown && /Epic/.test(itip.text) && /Charm/.test(itip.text) && /Cloudmist Pendant/.test(itip.text), JSON.stringify(itip.text.replace(/\n/g, " | ")));
+  await SHOT3("bag_tooltip");
+  await page.mouse.move(5, 5);
+  await page.focus('#bag .bi[data-item="Fox Tail"]');
+  await sleep(200);
+  check("keyboard focus shows the same item tooltip", await page.evaluate(() => /Fox Tail/.test(document.getElementById("itip").innerText) && document.getElementById("itip").classList.contains("show")));
+  await page.evaluate(() => document.activeElement.blur());
+  await page.keyboard.press("i");
+  await sleep(250);
+
+  // world map
+  const exp0 = await page.evaluate(() => document.querySelector("#wmap .wmp").textContent);
+  await page.keyboard.press("n");
+  await sleep(500);
+  const wm = await page.evaluate(() => { const w = document.getElementById("wmap"), c = w.querySelector("canvas"); return { shown: w.classList.contains("show"), w: c.width, pct: w.querySelector(".wmp").textContent, legend: w.querySelector(".wml").innerText }; });
+  check("N opens the world map with a legend and an explored percentage", wm.shown && wm.w >= 240 && /\d+% explored/.test(wm.pct) && /Boss/.test(wm.legend) && /Serpent/.test(wm.legend), JSON.stringify(wm));
+  check("walking has revealed part of the valley (fog of war)", parseInt(wm.pct, 10) >= 1, wm.pct);
+  await SHOT3("world_map");
+  await page.keyboard.press("Escape");
+  await sleep(250);
+  check("Esc closes the map", !(await page.evaluate(() => document.getElementById("wmap").classList.contains("show"))));
+  await jclick("#minimap");
+  await sleep(300);
+  check("clicking the minimap opens the map and N closes it", (await page.evaluate(() => document.getElementById("wmap").classList.contains("show"))) && (await page.keyboard.press("n"), await sleep(250), !(await page.evaluate(() => document.getElementById("wmap").classList.contains("show")))));
+  void exp0;
+
+  // action bar polish: press feedback, keyboard focus, live cooldown in the tooltip
+  await page.keyboard.down("Digit2");
+  await sleep(120);
+  const pressed = await page.evaluate(() => document.querySelectorAll("#hotbar .slot")[1].classList.contains("press"));
+  await page.keyboard.up("Digit2");
+  await sleep(120);
+  check("hotbar slot depresses while its key is held and releases after", pressed && !(await page.evaluate(() => document.querySelectorAll("#hotbar .slot")[1].classList.contains("press"))));
+  check("hotbar slots are keyboard-focusable buttons with descriptive labels", await page.evaluate(() => { const s = document.querySelectorAll("#hotbar .slot")[0]; return s.tabIndex === 0 && s.getAttribute("role") === "button" && /key 1/.test(s.getAttribute("aria-label")); }));
+  await page.evaluate(() => document.querySelectorAll("#hotbar .slot")[2].dispatchEvent(new PointerEvent("pointerenter")));
+  await sleep(150);
+  check("skill tooltip shows a live cooldown line and a Qi glossary entry", await page.evaluate(() => { const t = document.getElementById("tip"); return /Ready|cooldown/i.test(t.querySelector(".tcd")?.textContent || "") && /Jade energy/.test(t.innerText); }));
+  await page.evaluate(() => document.querySelectorAll("#hotbar .slot")[2].dispatchEvent(new PointerEvent("pointerleave")));
+  check("chat and loot regions announce to screen readers", await page.evaluate(() => document.getElementById("chatlog").getAttribute("aria-live") === "polite" && document.getElementById("loot").getAttribute("role") === "status" && document.getElementById("warn").getAttribute("role") === "alert"));
+  await SHOT3("hud_overview");
+  R = await rects();
+  check("1280x720 with chat tabs: no HUD overlap", overlaps(R).length === 0, overlaps(R).join(","));
 
   // ---- 5. 20 Hz input under slow frames
   const clk = () => retry(() => page.evaluate(() => ({ n: window.__jz.state.inputsSent, t: performance.now(), p: window.__jz.state.pos })));

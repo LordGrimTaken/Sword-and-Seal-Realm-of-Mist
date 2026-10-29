@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import {
+  telegraphContains,
+  type TelegraphGeom,
   type ClassId,
   type GameEvent,
   type ServerMsg,
@@ -16,9 +18,17 @@ import { Hud, type HudEnt } from "../ui/hud";
 import { audio } from "../audio/instance";
 import { PROMPT_RANGE } from "../ui/dialog";
 import { plain } from "../ui/glyphs";
+import { rarityOf } from "../ui/itemtips";
 import type { QuestEvent } from "../ui/quest";
 import { TargetRing, installTargetStyle, orderTargets, cycleFrom, TAB_RANGE, DROP_RANGE } from "./targeting";
 import { Juice, HIT_STOP_MS } from "./juice";
+import { createRollFx, type RollFx } from "../vfx/roll";
+import { ContentUi } from "../ui/contentui";
+
+// mirrors QI in server/src/data.ts (the server is authoritative; these only drive prediction and the HUD)
+const QI_REGEN = 10, DODGE_COST = 15, DODGE_DIST = 6, DODGE_TIME = 0.25, DODGE_CD = 1.5;
+const DASH_STEPS = Math.round(DODGE_TIME / STEP);
+const DASH_MULT = DODGE_DIST / DODGE_TIME / 6; // dash speed as a multiple of PLAYER_SPEED (6)
 
 type Welcome = Extract<ServerMsg, { t: "welcome" }>;
 /** Lines of the server's `/daily` dump (Fen's talk): suppressed in chat right after the board opens from a conversation. */
@@ -46,6 +56,7 @@ export interface DebugState {
   readonly dialog: { open: boolean; npc: number };
   readonly helpOpen: boolean;
   readonly inv: Array<{ item: string; itemZh: string; qty: number }>;
+  readonly content?: { gearOpen: boolean; journalOpen: boolean; npcOpen: boolean; gear: { slots: Record<string, string | null>; stats: { atk: number; hp: number; crit: number; def: number } }; items: number; sq: number; pts: number; title: string | null };
   readonly bagOpen: boolean;
   /** v3: wallet balances, daily board and whether the Notice Board panel is open */
   readonly wallet: { coin: number; jade: number };
@@ -61,6 +72,17 @@ export interface DebugState {
   readonly juice?: { on: boolean; frozen: boolean; hits: number; stops: number; lastStopMs: number; nudges: number; flashes: number; vignettes: number };
   /** ids Tab would cycle through right now, in order */
   readonly tabOrder?: number[];
+  /** 0.4.0: Qi bar (server value, corrected for casts in flight) and dodge roll counters */
+  readonly qi?: { qi: number; max: number; text: string; fill: number; low: boolean; slots: Array<{ slot: number; cost: number; short: boolean }> };
+  /** last client-side refusal message (no target, out of range, not enough Qi) */
+  readonly lastRefusal?: string;
+  readonly dodge?: { rolls: number; dodged: number; rolling: boolean; cooldownMs: number; lastDist: number };
+}
+
+/** A telegraphed ground attack the client is showing: circle, cone, line, or a sweeping beam (`sweep` != 0). */
+interface Danger {
+  x: number; z: number; radius: number; start: number; delay: number; src: number; inside: boolean; landed: boolean;
+  shape: "circle" | "cone" | "line"; dir: number; arc: number; len: number; width: number; sweep: number; lead: number; heavy: boolean;
 }
 
 export class Game {
@@ -82,6 +104,21 @@ export class Game {
   private targetId = -1;
   private ring: TargetRing;
   private juice = new Juice();
+  private rollFx: RollFx;
+  /** Qi estimate: server value from the last snapshot minus casts still in flight, plus local regeneration between snapshots. */
+  private qiEst = 100;
+  private qiMax = 100;
+  private qiSpent: Array<{ t: number; cost: number }> = [];
+  private dashSteps = 0;
+  private dashDx = 0;
+  private dashDz = 0;
+  private dashHoldUntil = 0;
+  private rolls = 0;
+  /** Screenshot aid (debug=1&rollslow=N): stretches only the cosmetic roll animation and streak, never the simulation. */
+  private rollSlow = (() => { try { const q = new URLSearchParams(location.search); return q.has("debug") ? Math.max(1, Math.min(60, Number(q.get("rollslow")) || 1)) : 1; } catch { return 1; } })();
+  private dodgedCount = 0;
+  private rollStart: { x: number; z: number } | null = null;
+  private lastRollDist = 0;
   private running = true;
   private raf = 0;
   private last = performance.now();
@@ -105,8 +142,9 @@ export class Game {
   private inputsSent = 0;
   private lowRes = false;
   private wasDead = false;
+  private content!: ContentUi;
   /** Active telegraphed attacks (boss slams): ground circle, start time and wind-up length. */
-  private dangers: Array<{ x: number; z: number; radius: number; start: number; delay: number; src: number; inside: boolean; landed: boolean }> = [];
+  private dangers: Danger[] = [];
   /** Last seen level/dead flag per player entity, used to spot level-ups and respawns of nearby players. */
   private playerFx = new Map<number, { lv: number; dead: boolean }>();
   private quietQuest = 0; // pending automatic /quest replies whose chat echo is hidden
@@ -148,6 +186,7 @@ export class Game {
     // ink-brush target ring on the ground + nameplate highlight style
     installTargetStyle();
     this.ring = new TargetRing(this.scene);
+    this.rollFx = createRollFx(this.scene, (x, z) => this.world.heightAt(x, z));
 
     this.hud = new Hud({
       onSlot: (s) => this.castSlot(s),
@@ -161,7 +200,16 @@ export class Game {
     });
     this.hud.setZone(this.zone);
     this.hud.setSkills(this.skills, this.cls);
-    this.hud.addChat("", "WASD move · RMB drag orbit · wheel zoom · Tab target · 1-4 skills · F speak · I bag · B notice board · L quests · F1 help · Enter chat", true, false);
+    this.content = new ContentUi(this.hud.root, {
+      send: (m) => this.net.send(m),
+      inv: () => this.hud.bag.list,
+      level: () => this.ents.map.get(this.myId)?.s.lv ?? 1,
+      cls: () => this.cls,
+      wallet: () => this.hud.wallet.values,
+      say: (t) => this.hud.addChat("", t, true, false),
+      playerDist: (id) => { const o = this.ents.map.get(id); return o ? Math.hypot(o.x - this.vis.x, o.z - this.vis.z) : 0; },
+    });
+    this.hud.addChat("", "WASD move · RMB drag orbit · wheel zoom · Tab target · 1-4 skills · Space dodge · F speak · I bag · G gear · J journal · B notice board · L quests · F1 help · Enter chat", true, false);
 
     this.input = new Input(this.renderer.domElement, {
       onCast: (s) => this.castSlot(s),
@@ -169,13 +217,14 @@ export class Game {
       onEnter: () => this.hud.focusChat(),
       onEscape: () => {
         // Esc closes an open panel first (handled in handleKey); only with nothing open does it clear the target
-        if (this.hud.help.isOpen || this.hud.dialog.isOpen || this.hud.bag.isOpen || this.hud.board.isOpen || this.hud.quest.logOpen) return;
+        if (this.content.anyOpen || this.hud.help.isOpen || this.hud.dialog.isOpen || this.hud.bag.isOpen || this.hud.board.isOpen || this.hud.quest.logOpen || this.hud.map.isOpen) return;
         this.targetId = -1;
       },
       onClick: (x, y) => this.pick(x, y),
       onOrbit: (dx, dy) => this.fcam.orbit(dx, dy),
       onZoom: (d) => this.fcam.zoom(d),
       onMute: () => this.hud.toggleMute(),
+      onDodge: () => this.doDodge(),
     });
 
     // start the player at the spawn so the camera has somewhere to be before the first snapshot
@@ -253,14 +302,19 @@ export class Game {
       get dialog() { return { open: self.hud.dialog.isOpen, npc: self.hud.dialog.npcId }; },
       get helpOpen() { return self.hud.help.isOpen; },
       get inv() { return self.hud.bag.list.map((i) => ({ ...i })); },
+      get content() { const c = self.content; return { gearOpen: c.gearPanel.isOpen, journalOpen: c.journal.isOpen, npcOpen: c.npcPanel.isOpen, gear: c.gear, items: c.items.size, sq: c.journal.sq.length, pts: c.journal.prog.pts, title: c.journal.prog.title }; },
       get bagOpen() { return self.hud.bag.isOpen; },
       get wallet() { return self.hud.wallet.values; },
       get daily() { const b = self.hud.board; return { open: b.isOpen, claimable: b.claimable, resetIn: b.resetIn, tasks: b.list.map((t) => ({ id: t.id, title: t.title, have: t.have, need: t.need, done: t.done, claimed: t.claimed })) }; },
       get xpBar() { return self.hud.xpState(); },
       get bossBar() { return !!self.bossEnt(); },
       get dangers() { return self.dangers.length; },
+      get dangerShapes() { return self.dangers.map((d) => (d.sweep ? "beam" : d.shape)); },
       get juice() { const j = self.juice; return { on: j.enabled, frozen: j.frozen, ...j.stats }; },
       get tabOrder() { return self.tabOrder(); },
+      get qi() { return self.hud.qiState(); },
+      get lastRefusal() { return self.lastRefusal; },
+      get dodge() { return { rolls: self.rolls, dodged: self.dodgedCount, rolling: self.dashSteps > 0 || self.ents.map.get(self.myId)?.roll !== undefined, cooldownMs: Math.round(self.hud.cooldownLeft(0)), lastDist: +self.lastRollDist.toFixed(2) }; },
       get ents() { return [...self.ents.map.values()].map((e) => ({ id: e.id, k: e.s.k, n: e.s.n, x: +e.x.toFixed(2), z: +e.z.toFixed(2), hp: e.s.hp, mhp: e.s.mhp })); },
     } as DebugState;
     Object.defineProperty(dbg, "scene", { get: () => self.scene, enumerable: false }); // for inspection scripts
@@ -277,7 +331,15 @@ export class Game {
         this.ents.applySnapshot(m.ents, m.gone, now);
         for (const id of m.gone) if (id === this.targetId) this.targetId = -1;
         const me = this.ents.map.get(this.myId);
-        if (me) this.pred.reconcile(m.ack, me.s.x, me.s.z);
+        // while a dodge roll is in flight the server's time-based dash and our step-based prediction disagree transiently: hold reconciliation until it has landed
+        if (me && now >= this.dashHoldUntil) this.pred.reconcile(m.ack, me.s.x, me.s.z);
+        if (typeof m.qi === "number") {
+          if (typeof m.mqi === "number" && m.mqi > 0) this.qiMax = m.mqi;
+          const inflight = now - (this.net.latency + 220);
+          this.qiSpent = this.qiSpent.filter((s) => s.t >= inflight);
+          this.qiEst = Math.max(0, Math.min(this.qiMax, m.qi - this.qiSpent.reduce((n, s) => n + s.cost, 0)));
+        }
+        if (typeof m.dcd === "number" && m.dcd > 0) this.hud.syncCooldown(0, m.dcd);
         break;
       }
       case "ev":
@@ -299,6 +361,7 @@ export class Game {
         audio.ui("error");
         break;
       default:
+        this.content.onMsg(m);
         break;
     }
   }
@@ -392,10 +455,24 @@ export class Game {
       case "telegraph":
         this.onTelegraph(e, now);
         break;
+      case "dodge": {
+        if (e.id === this.myId) break; // our own roll already played on the key press
+        this.ents.startRoll(e.id, now, e.dur * 1000);
+        if (this.nearMe(e.id, 45)) { this.rollFx.play(e.x, e.z, e.dx, e.dz, e.dist, e.dur); audio.dodge("roll"); }
+        break;
+      }
+      case "dodged": {
+        if (e.id !== this.myId) break;
+        this.dodgedCount++;
+        const p = this.entPos(e.id, this.tmpV, 1.15);
+        if (p) this.hud.float(p, "Dodged!", "xp");
+        audio.dodge("dodged");
+        break;
+      }
       case "loot":
         this.hud.lootLine(e.item, e.qty);
         this.hud.quest.onLoot(e.item, e.qty);
-        audio.loot();
+        audio.loot(rarityOf(e.item));
         break;
     }
   }
@@ -420,22 +497,44 @@ export class Game {
     if (e.crit) j.vignette(t);
   }
 
-  /** Boss ground attack: red ring on the terrain, on-screen warning, minimap danger disc, gong. Damage lands `delay` s later. */
+  /** Current facing of a danger zone (a beam rotates once its warning lead-in is over). */
+  private dangerDir(d: { dir: number; sweep: number; lead: number; start: number; delay: number }, now: number): number {
+    if (!d.sweep) return d.dir;
+    return d.dir + d.sweep * Math.max(0, Math.min(1, ((now - d.start) / 1000 - d.lead) / Math.max(0.1, d.delay / 1000 - d.lead)));
+  }
+
+  private dangerShape(d: Danger, now: number): TelegraphGeom {
+    return { shape: d.shape, x: d.x, z: d.z, radius: d.radius, dir: this.dangerDir(d, now), arc: d.arc, len: d.len, width: d.width };
+  }
+
+  /** Ground attack: red zone on the terrain (ring, cone, line or sweeping beam), warning, minimap danger shape, gong. Damage lands `delay` s later (beams: after `lead`). */
   private onTelegraph(e: Extract<GameEvent, { k: "telegraph" }>, now: number) {
     const x = Number(e.x), z = Number(e.z), radius = Math.max(0.5, Number(e.radius) || 4), delay = Math.max(0.2, Number(e.delay) || 1.5);
     if (!isFinite(x) || !isFinite(z)) return;
-    this.vfx.telegraph(new THREE.Vector3(x, this.world.heightAt(x, z), z), radius, delay);
-    if (this.dangers.length >= 10) this.dangers.shift();
-    const inside = Math.hypot(this.vis.x - x, this.vis.z - z) <= radius;
-    this.dangers.push({ x, z, radius, start: now, delay: delay * 1000, src: e.src, inside, landed: false });
+    const shape: Danger["shape"] = e.shape === "cone" || e.shape === "line" ? e.shape : "circle";
+    const dir = Number(e.dir) || 0, arc = Math.max(0.2, Number(e.arc) || 1.4), len = Math.max(0.5, Number(e.len) || radius), width = Math.max(0.5, Number(e.width) || 2);
+    const sweep = shape === "line" ? Number(e.sweep) || 0 : 0, lead = Math.max(0, Number(e.lead) || 0);
     const src = this.ents.map.get(e.src);
+    const heavy = !!e.beam || shape === "circle" || !src || src.s.mob === "stone_guardian"; // boss attacks get the full show; mob swings stay quiet
+    const at = new THREE.Vector3(x, this.world.heightAt(x, z), z);
+    if (shape === "circle") this.vfx.telegraph(at, radius, delay);
+    else this.vfx.telegraphShape(at, { shape, dir, len, arc, width, delay, sweep, lead, beam: !!e.beam });
+    if (this.dangers.length >= 14) this.dangers.shift();
+    const d: Danger = { x, z, radius, start: now, delay: delay * 1000, src: e.src, inside: false, landed: false, shape, dir, arc, len, width, sweep, lead, heavy };
+    d.inside = telegraphContains(this.dangerShape(d, now), this.vis.x, this.vis.z);
+    this.dangers.push(d);
     const me = this.ents.map.get(this.myId);
+    if (!heavy) {
+      if (d.inside && me && Math.hypot(me.x - x, me.z - z) < 12) this.hud.toast("Step out of the red mark!", Math.max(500, delay * 1000));
+      return;
+    }
     if (me && Math.hypot(me.x - x, me.z - z) < 70) {
       const guardian = !src || src.s.mob === "stone_guardian";
       const who = guardian ? "Stone Guardian" : plain(src.s.n);
-      this.hud.warn(`${who} winds up!`, "Step out of the red ring", Math.max(1400, delay * 1000 + 500));
+      if (e.beam) this.hud.warn("Rune beam!", "Run around the sweeping beam", Math.max(1800, delay * 1000 + 400));
+      else this.hud.warn(`${who} winds up!`, shape === "circle" ? "Step out of the red ring" : "Step out of the red mark", Math.max(1400, delay * 1000 + 500));
       audio.warn();
-      if (inside) this.hud.toast("Move out of the red ring!", Math.max(1200, delay * 1000));
+      if (d.inside && !e.beam) this.hud.toast(shape === "circle" ? "Move out of the red ring!" : "Move out of the red mark!", Math.max(1200, delay * 1000));
     }
   }
 
@@ -446,10 +545,15 @@ export class Game {
       if (!d.landed && now >= d.start + d.delay) {
         d.landed = true;
         const dist = Math.hypot(this.vis.x - d.x, this.vis.z - d.z);
-        if (dist < d.radius + 45) {
+        if (d.sweep) { /* a beam has no single impact: its damage ticks arrive as ordinary hits */ }
+        else if (!d.heavy) {
+          if (d.inside && dist < 20 && !telegraphContains(this.dangerShape(d, now), this.vis.x, this.vis.z)) {
+            this.hud.float(this.tmpV.set(this.vis.x, this.world.heightAt(this.vis.x, this.vis.z) + 2.2, this.vis.z), "Dodged!", "xp");
+          }
+        } else if (dist < d.radius + 45) {
           audio.impact();
           this.fcam.shake(Math.max(0.08, 0.5 * (1 - dist / (d.radius + 45))), 0.45);
-          if (d.inside && dist > d.radius + 0.3) {
+          if (d.inside && !telegraphContains(this.dangerShape(d, now), this.vis.x, this.vis.z)) {
             const p = this.tmpV.set(this.vis.x, this.world.heightAt(this.vis.x, this.vis.z) + 2.2, this.vis.z);
             this.hud.float(p, "Dodged!", "xp");
             audio.ui("open");
@@ -513,15 +617,19 @@ export class Game {
     const typing = !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA") && (a as HTMLInputElement).type !== "range" && (a as HTMLInputElement).type !== "checkbox";
     if (e.code === "F1") { e.preventDefault(); this.hud.help.toggle(); return; }
     if (e.code === "Escape") {
+      if (this.content.closeTop()) return;
       if (this.hud.help.isOpen) this.hud.help.toggle(false);
       else if (this.hud.dialog.isOpen) this.hud.dialog.close();
       else if (this.hud.bag.isOpen) this.hud.bag.toggle(false);
       else if (this.hud.board.isOpen) this.hud.board.toggle(false);
       else if (this.hud.quest.logOpen) this.hud.quest.toggleLog(false);
+      else if (this.hud.map.isOpen) this.hud.map.toggle(false);
       return;
     }
     if (typing || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === "?") { this.hud.help.toggle(); return; }
+    if (e.code === "KeyG") { this.content.gearPanel.toggle(); audio.ui(this.content.gearPanel.isOpen ? "open" : "close"); return; }
+    if (e.code === "KeyJ") { this.content.journal.toggle(); audio.ui(this.content.journal.isOpen ? "open" : "close"); return; }
     if (e.code === "KeyL") { this.hud.quest.toggleLog(); return; }
     if (e.code === "KeyB") { this.hud.board.toggle(); return; }
     if (e.code === "KeyI") { this.hud.bag.toggle(); audio.ui(this.hud.bag.isOpen ? "open" : "close"); return; }
@@ -542,6 +650,7 @@ export class Game {
   private speakToNearest() {
     const me = this.ents.map.get(this.myId);
     if (!me || me.dead) return;
+    if (this.content.npcPanel.isOpen) { this.content.npcPanel.close(); return; }
     if (this.hud.dialog.isOpen) { this.hud.dialog.close(); return; }
     const n = this.nearestNpc(40);
     if (!n) { this.sys("No one is near enough to speak to."); return; }
@@ -552,6 +661,8 @@ export class Game {
   private openNpc(e: Ent, d?: number) {
     const dist = d ?? Math.hypot(e.x - this.vis.x, e.z - this.vis.z);
     this.setTarget(e.id);
+    const ck = this.content.npcKey(e.s.n);
+    if (ck) { this.hud.dialog.close(); this.content.openNpc(e.id, ck, e.s.n); return; }
     if (/Fen/i.test(e.s.n)) this.armDailyQuiet();
     this.hud.dialog.open({ id: e.id, name: e.s.n }, dist);
   }
@@ -620,16 +731,49 @@ export class Game {
   }
 
   private lastSys = new Map<string, number>();
+  private lastRefusal = "";
   private sys(text: string) {
     const now = performance.now();
     if (now - (this.lastSys.get(text) ?? -1e9) < 1500) return;
     this.lastSys.set(text, now);
+    this.lastRefusal = text;
     this.hud.addChat("", text, true, false);
     audio.ui("error");
   }
 
+  /** Space / the Dodge slot: roll ~6 units toward the movement keys (or the facing). The server decides; the client predicts. */
+  private doDodge() {
+    if (this.hud.chatFocused) return;
+    const me = this.ents.map.get(this.myId);
+    if (!me || me.dead || !this.pred.ready || this.dashSteps > 0) return;
+    if (this.hud.cooldownLeft(0) > 0) return;
+    if (this.qiEst + 1e-6 < DODGE_COST) { this.hud.qiShort(0); this.sys("Not enough Qi to dodge."); return; }
+    let dx = this.wantDx, dz = this.wantDz;
+    if (dx === 0 && dz === 0) { dx = Math.sin(me.r); dz = Math.cos(me.r); }
+    const l = Math.hypot(dx, dz) || 1;
+    dx /= l; dz /= l;
+    const now = performance.now();
+    this.net.send({ t: "dodge", dx: +dx.toFixed(4), dz: +dz.toFixed(4) });
+    this.hud.startCooldown(0, DODGE_CD * 1000);
+    this.spendQi(DODGE_COST);
+    this.dashDx = dx; this.dashDz = dz; this.dashSteps = DASH_STEPS;
+    this.dashHoldUntil = now + 10000; // released (latency + 200 ms) once the last predicted dash step has been taken
+    this.myFacing = Math.atan2(dx, dz);
+    this.rolls++;
+    this.rollStart = { x: this.pred.x, z: this.pred.z };
+    this.ents.startRoll(this.myId, now, DODGE_TIME * 1000 * this.rollSlow);
+    this.rollFx.play(this.vis.x, this.vis.z, dx, dz, DODGE_DIST, DODGE_TIME * this.rollSlow);
+    audio.dodge("roll");
+  }
+
+  private spendQi(cost: number) {
+    this.qiEst = Math.max(0, this.qiEst - cost);
+    this.qiSpent.push({ t: performance.now(), cost });
+  }
+
   private castSlot(slot: number) {
     if (this.hud.chatFocused) return;
+    if (slot === 0) { this.doDodge(); return; }
     const sk = this.skills.find((s) => s.id === slot);
     const me = this.ents.map.get(this.myId);
     if (!sk || !me || me.dead) return;
@@ -666,7 +810,10 @@ export class Game {
       msg.target = target.id;
       msg.tx = target.x; msg.tz = target.z;
     }
+    const cost = sk.qi ?? 0;
+    if (this.qiEst + 1e-6 < cost) { this.hud.qiShort(slot); this.sys(`Not enough Qi for ${plain(sk.name)} (need ${cost}).`); return; }
     this.net.send(msg);
+    this.spendQi(cost);
     this.hud.startCooldown(slot, Math.max(250, sk.cooldown * 1000));
     if (sk.kind === "heal" && sk.range <= 0) this.hud.addBuff(this.cls, sk.id); // self-buff icon (no buff event in the protocol)
     audio.cast(sk.id, this.cls); // instant feedback; the server's own cast event is skipped for the local player
@@ -702,13 +849,17 @@ export class Game {
       this.vis.x = this.zone.spawn.x; this.vis.z = this.zone.spawn.z;
       return false;
     }
-    const dx = this.wantDx, dz = this.wantDz;
+    let dx = this.dashSteps > 0 ? this.dashDx : this.wantDx, dz = this.dashSteps > 0 ? this.dashDz : this.wantDz;
     const wantMove = dx !== 0 || dz !== 0;
     this.acc = Math.min(this.acc + dt, STEP * 10);
     while (this.acc >= STEP) {
       this.acc -= STEP;
+      let lastDash = false;
+      if (this.dashSteps > 0) { dx = this.dashDx * DASH_MULT; dz = this.dashDz * DASH_MULT; lastDash = --this.dashSteps === 0; } // dodge roll: scaled steps, whatever keys are held
+      else { dx = this.wantDx; dz = this.wantDz; }
       if (wantMove || this.lastMoving) {
         const seq = this.pred.step(dx, dz);
+        if (lastDash && this.rollStart) { this.lastRollDist = Math.hypot(this.pred.x - this.rollStart.x, this.pred.z - this.rollStart.z); this.rollStart = null; }
         this.net.send({ t: "input", seq, dx: +dx.toFixed(4), dz: +dz.toFixed(4) });
         this.inputsSent++;
         this.lastMoving = wantMove;
@@ -718,6 +869,7 @@ export class Game {
       }
     }
     if (wantMove) this.myFacing = Math.atan2(dx, dz);
+    if (this.dashHoldUntil > performance.now() + 5000 && this.dashSteps <= 0) this.dashHoldUntil = performance.now() + this.net.latency + 200;
     this.pred.visual(wantMove || this.lastMoving ? this.acc / STEP : 1, dt, this.vis);
     return wantMove;
   }
@@ -761,8 +913,13 @@ export class Game {
     this.juice.applyNudge(this.camera, pnow, window.innerWidth, window.innerHeight);
 
     // ---- world / vfx
+    this.world.focus([{ x: this.vis.x, z: this.vis.z }]); // pond ripples / koi shy from the wading player (art hook)
     this.world.update(dt, this.camera.position);
+    this.content.frame();
     this.vfx.update(adt);
+    this.rollFx.update(adt);
+    this.qiEst = Math.min(this.qiMax, this.qiEst + QI_REGEN * dt);
+    this.hud.setQi(this.qiEst, this.qiMax);
 
     // ---- target ring
     const tgt = this.ents.map.get(this.targetId);
@@ -796,7 +953,7 @@ export class Game {
       target: tgt ? toHud(tgt) : null,
       interact: near ? toHud(near.e) : null,
       boss: boss ? toHud(boss) : null,
-      dangers: this.dangers.map((d) => ({ x: d.x, z: d.z, radius: d.radius, frac: Math.max(0, Math.min(1, (now - d.start) / d.delay)) })),
+      dangers: this.dangers.map((d) => ({ x: d.x, z: d.z, radius: d.radius, frac: Math.max(0, Math.min(1, (now - d.start) / d.delay)), shape: d.shape, dir: this.dangerDir(d, now), arc: d.arc, len: d.len, width: d.width, beam: d.sweep !== 0, live: d.sweep !== 0 && (now - d.start) / 1000 >= d.lead })),
       fps: this.fpsAvg,
       ping: this.net.latency,
       nowMs: now,
@@ -858,6 +1015,7 @@ export class Game {
     this.renderer.domElement.remove();
     this.juice.dispose(this.camera);
     this.ring.dispose();
+    this.rollFx.dispose();
     this.renderer.dispose();
   }
 }

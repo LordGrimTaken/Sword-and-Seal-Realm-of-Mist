@@ -5,6 +5,7 @@ import { mulberry32 } from "../world/noise";
 import { rockChunk } from "../world/rocks";
 import { PAL, hex } from "../world/toon";
 import { jadeSerpent } from "./serpent";
+import { lotusToad, stoneHound } from "./content_mobs";
 import { Anim, Avatar, AvState, Dissolve, bake, clamp01, ease, glowPart, node, part, shadowBlob, vcPart } from "./common";
 
 const hx = (a: number, b: number, t: number) => hex(a, b, t).getHex();
@@ -159,11 +160,11 @@ function bambooSpirit(): Avatar {
 }
 
 // ======================== Fox Spirit ========================
-function foxSpirit(): Avatar {
+function foxSpirit(grey = false): Avatar { // grey = Old Whisker, the named rare: larger, silver-grey fur
   const root = new THREE.Group();
-  const body = node(); body.scale.setScalar(1.1); root.add(body);
-  root.add(shadowBlob(0.95));
-  const fur = hx(PAL.vermilion, PAL.paperDark, 0.42), furD = hx(PAL.vermilion, PAL.inkSoft, 0.35), cream = hx(PAL.paper, PAL.paperDark, 0.1), sock = PAL.inkSoft;
+  const body = node(); body.scale.setScalar(grey ? 1.55 : 1.1); root.add(body);
+  root.add(shadowBlob(grey ? 1.4 : 0.95));
+  const fur = grey ? hx(PAL.mist, PAL.paper, 0.45) : hx(PAL.vermilion, PAL.paperDark, 0.42), furD = grey ? hx(PAL.mist, PAL.inkSoft, 0.45) : hx(PAL.vermilion, PAL.inkSoft, 0.35), cream = hx(PAL.paper, PAL.paperDark, 0.1), sock = PAL.inkSoft;
   const torso = node(); torso.position.y = 0.64; body.add(torso);
   const tb = part(new THREE.SphereGeometry(0.31, 12, 9), fur, 0.02); tb.scale.set(0.85, 0.82, 1.55); torso.add(tb);
   const belly = part(new THREE.SphereGeometry(0.27, 9, 7), cream, 0); belly.scale.set(0.82, 0.6, 1.4); add(torso, belly, 0, -0.1, 0.03);
@@ -226,7 +227,7 @@ function foxSpirit(): Avatar {
   const an = new Anim(); const dis = new Dissolve(root);
   const shadow = root.children.find((c) => c.name === "shadow");
   return {
-    root, height: 1.25,
+    root, height: grey ? 1.8 : 1.25,
     setState(st: AvState) {
       if (st !== "dead" && an.state === "dead") { dis.end(); root.visible = true; if (shadow) shadow.visible = true; body.rotation.set(0, 0, 0); body.position.set(0, 0, 0); hnd.glow.value = 1; }
       an.setState(st);
@@ -366,11 +367,28 @@ function stoneGuardian(): Avatar {
   const coreMat = new THREE.MeshBasicMaterial({ map: runeCoreTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false });
   const core = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.0), coreMat); core.position.set(0, 2.15, 1.45); core.name = "core"; torso.add(core);
 
+  // phase 3 ("cracked open"): jagged white-hot fissures across the chest, belly and shoulders (additive, hidden until the last quarter of its HP)
+  const crackMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false, side: THREE.DoubleSide });
+  const cracks = new THREE.Group(); cracks.visible = false; torso.add(cracks);
+  {
+    const cr = mulberry32(5);
+    for (const [x0, y0, ang, n] of [[-0.2, 2.9, -1.1, 6], [0.5, 2.8, -2.0, 5], [-0.7, 1.6, -0.5, 6], [0.3, 1.5, -1.6, 7], [0.9, 2.4, -0.9, 4], [-0.9, 2.5, -1.7, 4]] as const) {
+      let cx = x0, cy = y0, a = ang;
+      for (let i = 0; i < n; i++) {
+        const len = 0.28 + cr() * 0.22, seg = new THREE.Mesh(new THREE.PlaneGeometry(0.07 * (1 - i / (n + 2)) + 0.025, len), crackMat);
+        a += (cr() - 0.5) * 1.1; seg.rotation.z = a; seg.position.set(cx - Math.sin(a) * len / 2, cy + Math.cos(a) * len / 2, 1.5 + 0.01 * i); cracks.add(seg);
+        cx -= Math.sin(a) * len; cy += Math.cos(a) * len;
+      }
+    }
+  }
+  let p3 = 0, p3Target = 0;
+
   const hnd = bake(root, 0.26);
   const an = new Anim(); const dis = new Dissolve(root);
   const shadow = root.children.find((c) => c.name === "shadow");
   return {
     root, height: 5.6,
+    setPhase(n: number) { p3Target = n >= 3 ? 1 : 0; },
     setState(st: AvState) {
       if (st !== "dead" && an.state === "dead") { dis.end(); root.visible = true; if (shadow) shadow.visible = true; body.rotation.set(0, 0, 0); body.position.set(0, 0, 0); hnd.glow.value = 1; core.visible = true; }
       an.setState(st);
@@ -378,7 +396,9 @@ function stoneGuardian(): Avatar {
     update(dt: number) {
       an.tick(dt);
       const t = an.t, m = an.move, k = an.atk;
+      p3 += (p3Target - p3) * Math.min(1, dt * 2.5);
       if (an.state === "dead") {
+        cracks.visible = false;
         const d = ease(an.dead);
         body.rotation.x = -0.35 * d; body.position.y = -0.9 * d; body.position.z = -0.4 * d;
         A_L.sh.rotation.x = 0.3 * d; A_R.sh.rotation.x = 0.5 * d; A_L.sh.rotation.z = -0.5 * d; A_R.sh.rotation.z = 0.4 * d;
@@ -393,9 +413,12 @@ function stoneGuardian(): Avatar {
       }
       // breathing glow: a slow inhale/exhale of the runes, flaring on attack
       const breath = 0.5 + 0.5 * Math.sin(t * 1.5);
-      hnd.glow.value = 0.55 + 0.45 * breath + 0.3 * k;
-      coreMat.opacity = 0.55 + 0.45 * breath;
-      const cs = 1.0 + 0.1 * breath + 0.15 * k; core.scale.set(cs, cs, 1);
+      const flare = 0.5 + 0.5 * Math.sin(t * 9);
+      hnd.glow.value = 0.55 + 0.45 * breath + 0.3 * k + p3 * (0.6 + 0.35 * flare);
+      coreMat.opacity = Math.min(1, 0.55 + 0.45 * breath + 0.4 * p3);
+      coreMat.color.setRGB(1 + 0.6 * p3, 1 + 0.35 * p3, 1 + 0.1 * p3);
+      const cs = (1.0 + 0.1 * breath + 0.15 * k) * (1 + 0.55 * p3); core.scale.set(cs, cs, 1); core.rotation.z = p3 * t * 0.6;
+      cracks.visible = p3 > 0.02; crackMat.opacity = p3 * (0.7 + 0.3 * flare);
       const ph = t * 4.2;
       body.position.y = Math.abs(Math.sin(ph)) * 0.14 * m + Math.sin(t * 1.1) * 0.015;
       body.rotation.z = Math.sin(ph) * 0.035 * m;
@@ -421,6 +444,9 @@ export function buildMob(type: string): Avatar {
   switch (type) {
     case "bamboo_spirit": return bambooSpirit();
     case "fox_spirit": return foxSpirit();
+    case "old_whisker": return foxSpirit(true);
+    case "lotus_toad": return lotusToad();
+    case "stone_hound": return stoneHound();
     case "jade_serpent": return jadeSerpent();
     default: return stoneGuardian();
   }

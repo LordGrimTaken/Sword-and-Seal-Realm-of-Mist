@@ -9,6 +9,8 @@ export interface InputHandlers {
   onOrbit(dx: number, dy: number): void;
   onZoom(delta: number): void;
   onMute?(): void;
+  /** Space: dodge roll */
+  onDodge?(): void;
 }
 
 function typing(): boolean {
@@ -38,6 +40,7 @@ export class Input {
       if (e.code === "Escape") { if (typing()) (document.activeElement as HTMLElement).blur(); else h.onEscape(); return; }
       if (typing()) return;
       if (e.code === "KeyM") { if (!e.repeat) h.onMute?.(); return; }
+      if (e.code === "Space") { e.preventDefault(); if (!e.repeat) h.onDodge?.(); return; }
       if (e.code === "Tab") { e.preventDefault(); h.onTab(e.shiftKey); return; }
       const m = /^(?:Digit|Numpad)([1-4])$/.exec(e.code);
       if (m) { if (!e.repeat) h.onCast(parseInt(m[1], 10)); return; }

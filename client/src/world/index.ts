@@ -4,16 +4,21 @@ import { buildAmbient } from "./ambient";
 import { buildGround } from "./ground";
 import { buildMountains, buildSky, HORIZON, SUN_DIR } from "./sky";
 import { buildStructures } from "./structures";
-import { buildTerrain, heightAt } from "./terrain";
+import { buildTerrain, heightAt, POND, WATER_Y } from "./terrain";
 import { buildVegetation } from "./vegetation";
 import { buildCranes } from "./cranes";
 import { buildWater } from "./water";
 import { PAL, hex } from "./toon";
+import { buildKoi } from "./koi";
+import { createDayNight } from "./daynight";
+import { updateWind } from "./wind";
 
 export { heightAt };
 
 export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): {
   update(dt: number, camPos: THREE.Vector3): void;
+  /** local player (and optionally others) so the pond can ripple around anyone wading and the koi can shy away */
+  focus(actors: { x: number; z: number }[]): void;
   heightAt(x: number, z: number): number;
 } {
   const root = new THREE.Group();
@@ -39,8 +44,16 @@ export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): 
   const veg = buildVegetation();
   const water = buildWater();
   const cranes = buildCranes();
+  const koi = buildKoi();
   const ambient = buildAmbient(structures.lanterns, { smokes: structures.smokes, rays: structures.rays });
-  root.add(terrain, buildGround(), structures.group, veg.group, water.mesh, ambient.group, cranes.mesh);
+  root.add(terrain, buildGround(), structures.group, veg.group, water.mesh, koi.mesh, ambient.group, cranes.mesh);
+
+  const dayNight = createDayNight({
+    scene, hemi, sun, sky, mountains: mountains.group,
+    apply(tone) { water.setTone(tone); ambient.setTone(tone); },
+  });
+  let todClock = 0;
+  let waders: { x: number; z: number }[] = [], wading: { x: number; z: number }[] = [];
 
   const lights: THREE.PointLight[] = [];
   for (let i = 0; i < 3; i++) {
@@ -70,14 +83,20 @@ export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): 
 
   return {
     heightAt,
+    focus(actors) { waders = actors; },
     update(dt: number, camPos: THREE.Vector3) {
       time += dt;
+      todClock += dt;
+      if (todClock > 0.2) { dayNight.update(todClock); todClock = 0; }
+      updateWind(time);
+      wading = waders.filter((a) => heightAt(a.x, a.z) < WATER_Y + 0.12 && Math.hypot(a.x - POND.x, a.z - POND.z) < POND.r * 1.5);
+      water.setWaders(wading); koi.update(time, wading);
       lightClock -= dt;
       if (lightClock <= 0) { lightClock = 0.35; pickLights(camPos); }
       for (let k = 0; k < 3; k++) {
         tmp.copy(targets[k]);
         lights[k].position.lerp(tmp, Math.min(1, dt * 6));
-        lights[k].intensity = 7.5 * (0.93 + 0.07 * Math.sin(time * 5.3 + k * 2.1));
+        lights[k].intensity = 7.5 * (1 + 0.9 * dayNight.tone.lamp) * (0.93 + 0.07 * Math.sin(time * 5.3 + k * 2.1));
       }
       // skybox-style layers follow camera (parallax-correct)
       sky.position.copy(camPos);

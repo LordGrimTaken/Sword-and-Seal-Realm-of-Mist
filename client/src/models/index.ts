@@ -11,4 +11,4 @@ export function createCharacterModel(cls: ClassId): Avatar { return buildClass(c
 /** Mob model (bamboo_spirit / fox_spirit / stone_guardian / jade_serpent). */
 export function createMobModel(type: MobType): Avatar { return buildMob(type); }
 /** NPC model. "elder" (default): staff and beard; "keeper": the Notice Board Keeper, jade-and-ink robe with a scroll. */
-export function createNpcModel(variant: "elder" | "keeper" = "elder"): Avatar { return buildNpc(variant); }
+export function createNpcModel(variant: "elder" | "keeper" | "artisan" | "peddler" = "elder"): Avatar { return buildNpc(variant); }

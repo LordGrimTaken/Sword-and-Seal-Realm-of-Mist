@@ -10,6 +10,7 @@
 //           --signing-report DIR --signed win,mac,linux --launcher-checksums DIR]
 //          [--min-launcher 1.0.0] [--channel stable] [--date YYYY-MM-DD]
 //          [--electron-linux DIR] [--electron-win32 DIR] [--electron-darwin DIR]   (unpacked electron-builder output dirs)
+//          [--news-from-changelog]  (dev only: also derive news from CHANGELOG.md)
 //          [--electron-linux-exe name] [--electron-win32-exe name.exe] [--electron-darwin-exe rel/path]
 // Input is the output of scripts/package.mjs (dist-package/jiuzhou-v<VERSION>/), laid out as game/ in the release.
 import fs from "node:fs";
@@ -100,7 +101,7 @@ const manifest = {
 };
 fs.writeFileSync(path.join(relDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 
-// 4. news.json from CHANGELOG.md (latest entries)
+// 4. news.json: player-facing posts from news.extra.json. The dev CHANGELOG.md is NOT published as news unless --news-from-changelog is given.
 function newsFromChangelog(md, releaseDate, limit = 5) {
   const parts = md.split(/^## /m).slice(1).slice(0, limit);
   return parts.map((blk, i) => {
@@ -117,14 +118,14 @@ function newsFromChangelog(md, releaseDate, limit = 5) {
   });
 }
 let news = [];
-try { news = newsFromChangelog(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), opt("date", releasedAt.slice(0, 10))); } catch { /* no changelog */ }
+if (flag("news-from-changelog")) try { news = newsFromChangelog(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), opt("date", releasedAt.slice(0, 10))); } catch { /* no changelog */ }
 // hand-written entries (news.extra.json at the repo root, same format) win over generated ones with the same id
 try {
   const extraNews = JSON.parse(fs.readFileSync(path.join(root, "news.extra.json"), "utf8"));
   if (Array.isArray(extraNews)) { const ids = new Set(extraNews.map((n) => n.id)); news = [...extraNews, ...news.filter((n) => !ids.has(n.id))]; }
 } catch { /* none */ }
 news = news.map((n, i) => ({ ...n, _i: i })).sort((a, b) => (b.date || "").localeCompare(a.date || "") || a._i - b._i).map(({ _i, ...n }) => n);
-if (!news.length) news = [{ id: version, title: `Version ${version}`, date: releasedAt.slice(0, 10), body: "Sword and Seal: Realm of Mist." }];
+if (!news.length) news = [{ id: version, title: "Welcome to the Realm of Mist", date: releasedAt.slice(0, 10), body: "Sword and Seal: Realm of Mist is ready to play." }];
 fs.writeFileSync(path.join(relDir, "news.json"), JSON.stringify(news, null, 2) + "\n");
 
 // 5. latest pointer: same manifest, files resolved relative to the versioned folder
@@ -205,6 +206,10 @@ if (launcherDir) {
     fs.mkdirSync(stableDir, { recursive: true });
     fs.copyFileSync(path.join(ldir, lfiles[p].name), path.join(stableDir, fixed));
     stable[p] = `${baseUrl}/launcher/latest/${fixed}`;
+  }
+  { // portable single-file Windows launcher: stable-named copy too
+    const pe = extra.find((x) => x.platform === "win" && x.kind === "portable");
+    if (pe) { fs.mkdirSync(stableDir, { recursive: true }); fs.copyFileSync(path.join(ldir, pe.name), path.join(stableDir, "SwordAndSeal-Launcher-Portable.exe")); stable.winPortable = `${baseUrl}/launcher/latest/SwordAndSeal-Launcher-Portable.exe`; }
   }
   for (const p of ["win", "mac", "linux"]) if (!lfiles[p]) console.warn(`WARNING: no ${p} launcher installer found in ${launcherDir}`);
   if (!Object.keys(lfiles).length) { console.error(`No launcher installers found in ${launcherDir}`); process.exit(1); }

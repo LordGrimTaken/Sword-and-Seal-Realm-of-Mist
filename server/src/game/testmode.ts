@@ -6,6 +6,8 @@
 //   /testgive Item_Name N  add items to the pack (exercises the stack cap)
 //   /testdrops          every loot roll for this player succeeds (deterministic drop tests)
 //   /testkill [type] [N] kill the N (default 1) nearest living non-boss mobs of that type (any if omitted) with full credit: xp, loot, quest progress
+//   /testqi N [S]       set current Qi (0..max); a value below max is held (no regen) for S seconds, default 6, max 600
+//   /testbosshp F       set the Stone Guardian HP to fraction F of max (phase-3 tests)
 //   /testheal           full hp, clears poison
 //   /testxp N           grant N xp through the normal path (level-ups, cap clamp, 'earn XP' daily)
 //   /testdaily [n]      complete all of today's daily tasks (or only task n, 1-based); sends `daily`
@@ -30,7 +32,7 @@ export function testCommand(w: World, p: Player, text: string): boolean {
   switch (cmd.toLowerCase()) {
     case "/testlevel": {
       if (!Number.isFinite(n[0])) return true;
-      p.lv = clamp(Math.floor(n[0]), 1, MAX_LEVEL); p.xp = 0; p.mhp = maxHpFor(p.cls, p.lv); p.hp = p.mhp;
+      p.lv = clamp(Math.floor(n[0]), 1, MAX_LEVEL); p.xp = 0; p.mhp = maxHpFor(p.cls, p.lv) + p.gear.hp; p.hp = p.mhp;
       w.emitTo(p, xpEvent(p, 0));
       w.sysTo(p, `[test] level ${p.lv}`);
       return true;
@@ -66,6 +68,15 @@ export function testCommand(w: World, p: Player, text: string): boolean {
       testClock.offsetMs = a[0] === "reset" ? 0 : Number.isFinite(n[0]) ? Math.round(n[0] * 3_600_000) : testClock.offsetMs;
       w.sysTo(p, `[test] clock offset ${testClock.offsetMs / 3_600_000} h`);
       return true;
+    case "/testqi": // /testqi N  set current Qi (clamped to the pool)
+      if (Number.isFinite(n[0])) { p.qi = clamp(n[0], 0, p.mqi); p.qiResumeAt = n[0] < p.mqi ? w.time + (Number.isFinite(n[1]) ? clamp(n[1], 0, 600) : 6) : w.time; } // low values are held (default 6 s) so tests can observe them; slow hosts pass a longer hold
+      return true;
+    case "/testbosshp": { // /testbosshp F  set the Stone Guardian's HP to F (0..1) of max, e.g. 0.2 jumps it into phase 3 on its next tick
+      const f = Number.isFinite(n[0]) ? clamp(n[0], 0.01, 1) : 1;
+      const boss = w.mobs.find((m) => m.def.boss && m.ai !== "dead");
+      if (boss) boss.hp = Math.max(1, Math.round(boss.mhp * f));
+      return true;
+    }
     case "/testheal":
       p.hp = p.mhp; p.poisonUntil = 0; p.lastHurt = -99;
       return true;

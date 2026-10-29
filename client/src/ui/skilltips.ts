@@ -29,11 +29,23 @@ export function skillDesc(cls: ClassId, sk: SkillDef): string {
   return DESC[cls]?.[sk.id - 1] ?? `${KIND[sk.kind]} skill.`;
 }
 
+/** Short glossary shown under a skill tooltip for the terms its text uses. */
+const GLOSSARY: Array<[RegExp, string, string]> = [
+  [/\bqi\b/i, "Qi", "Jade energy spent by skills and dodge rolls; it regenerates after a short pause."],
+  [/slows?\b/i, "Slow", "Reduces the target's movement speed for a few seconds."],
+  [/take \d+% less damage/i, "Guard", "Reduces all damage you take while it lasts."],
+  [/\ballies\b/i, "Allies", "Players within range of you, including yourself."],
+];
+
 export function skillTipHtml(cls: ClassId, sk: SkillDef): string {
   const range = sk.range <= 0 ? "Self" : `${sk.range} m`;
+  const desc = skillDesc(cls, sk);
+  const terms = GLOSSARY.filter(([re, k]) => re.test(desc) || (!!sk.qi && k === "Qi")).slice(0, 2);
   return `<div class="tn"><b>${esc(plain(sk.name))}</b><i>${sk.id}</i></div>
-    <div class="tm">${KIND[sk.kind]} · Cooldown ${sk.cooldown}s · Range ${range}</div>
-    <div class="td">${esc(skillDesc(cls, sk))}</div>`;
+    <div class="tm">${KIND[sk.kind]} · Cooldown ${sk.cooldown}s · Range ${range}${sk.qi ? ` · ${sk.qi} Qi` : ""}</div>
+    <div class="td">${esc(desc)}</div>
+    ${terms.map(([, k, d]) => `<div class="tk"><b>${esc(k)}</b> ${esc(d)}</div>`).join("")}
+    <div class="tcd"></div>`;
 }
 
 /** Buff shown on the player frame when a self-buff skill (slot 4 of sword / talisman) is cast. */

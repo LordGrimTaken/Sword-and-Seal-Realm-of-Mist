@@ -22,10 +22,11 @@ export function buildSky(): THREE.Mesh {
       uSunDir: { value: SUN_DIR.clone() },
       uSun: { value: hex(PAL.paper, 0xffffff, 0.0).multiplyScalar(1.15) },
       uTime: { value: 0 },
+      uMoonDir: { value: SUN_DIR.clone().multiplyScalar(-1) }, uNight: { value: 0 }, uDisc: { value: 0.5 }, uDiscCol: { value: hex(PAL.vermilion, PAL.paper, 0.45) },
     },
     vertexShader: `varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
     fragmentShader: `
-      uniform vec3 uZenith, uHorizon, uSun, uSunDir; uniform float uTime; varying vec3 vDir;
+      uniform vec3 uZenith, uHorizon, uSun, uSunDir, uMoonDir, uDiscCol; uniform float uTime, uNight, uDisc; varying vec3 vDir;
       ${GLSL_NOISE}
       void main(){
         vec3 d = normalize(vDir);
@@ -39,7 +40,24 @@ export function buildSky(): THREE.Mesh {
         col = mix(col, uHorizon, smoothstep(0.45, 0.8, cl) * 0.5 * band);
         col = mix(col, uZenith*0.93, smoothstep(0.6, 0.9, fbm2(cp*1.7+11.)) * 0.18 * band);
         float sd = max(dot(d, uSunDir), 0.0);
-        col += uSun * (pow(sd, 900.0) * 0.9 + pow(sd, 40.0) * 0.28 + pow(sd, 6.0) * 0.12);
+        col += uSun * (pow(sd, 40.0) * 0.28 + pow(sd, 6.0) * 0.12);
+        float above = smoothstep(-0.03, 0.04, d.y);
+        // sun: a flat seal-red disc with a thin wash ring (poster silhouette), only above the horizon
+        float ang = acos(clamp(dot(d, uSunDir), -1.0, 1.0));
+        float wob = 1.0 + 0.012 * sin(atan(d.x - uSunDir.x, d.z - uSunDir.z) * 7.0);
+        col = mix(col, uDiscCol, smoothstep(0.066 * wob, 0.058 * wob, ang) * above * (1.0 - uNight * 0.85));
+        col += uDiscCol * smoothstep(0.011, 0.0, abs(ang - 0.108)) * 0.22 * above * (1.0 - uNight);
+        // moon: pale paper disc, ring halo, a few dark maria
+        float am = acos(clamp(dot(d, uMoonDir), -1.0, 1.0));
+        vec3 mcol = vec3(0.93, 0.92, 0.84) - 0.06 * vec3(fbm2(d.xz * 80.0 + 4.0));
+        col = mix(col, mcol, smoothstep(0.05, 0.043, am) * uNight * above);
+        col += vec3(0.5, 0.58, 0.8) * (exp(-am * 22.0) * 0.18 + smoothstep(0.012, 0.0, abs(am - 0.12)) * 0.1) * uNight * above;
+        // stars: sparse twinkling dots, strongest high up, none on the lit side
+        vec2 sc = vec2(atan(d.x, d.z) * 52.0, d.y * 52.0);
+        vec2 si = floor(sc);
+        float sh = h21(si + 17.0);
+        float star = step(0.985, sh) * smoothstep(0.34, 0.0, length(fract(sc) - 0.5 - (h21(si) - 0.5) * 0.4)) * (0.55 + 0.45 * sin(uTime * (1.2 + sh * 3.0) + sh * 60.0));
+        col += vec3(0.85, 0.9, 1.0) * star * uNight * smoothstep(0.06, 0.4, d.y) * 0.9;
         col += (h21(gl_FragCoord.xy*0.5) - 0.5) * 0.012;
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>

@@ -9,6 +9,7 @@ export const invList = (p: Player): InvItem[] => [...p.inv.values()].map((i) => 
 export const invQty = (p: Player, item: string) => p.inv.get(item)?.qty ?? 0;
 
 export function sendInv(p: Player) {
+  if (p.cx) p.cx.dirty = true; // 0.4.0: "collect" objectives of side quests count the pack; the content tick resends them
   p.send(JSON.stringify({ t: "inv", items: invList(p) } satisfies ServerMsg));
 }
 

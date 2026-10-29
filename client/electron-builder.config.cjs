@@ -16,8 +16,9 @@ module.exports = {
   appId: "com.jiuzhou.client",
   productName: "Sword and Seal",
   copyright: "Copyright (c) Xianwuli Interactive LLC",
-  files: ["dist/**/*", "electron/**/*", "package.json"],
+  files: ["dist/**/*", "electron/**/*", "package.json", "!node_modules/**/*"],
   extraResources: [{ from: "../server/dist/server.mjs", to: "server/server.mjs" }],
+  asar: false, // loose files instead of one big app.asar (Windows Defender removed the 32 MB asar right after install; also gives per-file delta updates)
   directories: { output: "release" },
   artifactName: "Jiuzhou-${version}-${os}-${arch}.${ext}",
   linux: { target: [{ target: "AppImage", arch: ["x64"] }], category: "Game" },

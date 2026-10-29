@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { fbm, mulberry32, smoothstep, vnoise } from "./noise";
 import { BRIDGE, PLAZA, POND, WATER_Y, bridgeY, pathMask, pathX, pondD, terrainHeight } from "./terrain";
 import { PAL, hex, toonGradient } from "./toon";
+import { applyWind } from "./wind";
 
 /**
  * Ink-paved plaza: annular flagstone courses with wet ink-wash joints, a lotus medallion (16 + 8 brush petals around a taiji hub,
@@ -255,7 +256,9 @@ export function buildGround(): THREE.Group {
     if (rnd() > dens * 1.25) continue;
     tp.push({ x, z, s: 0.7 + rnd() * 1.1, ry: rnd() * 6.28, c: new THREE.Color().setHSL(0.36 + rnd() * 0.05, 0.1 + rnd() * 0.12, 0.7 + rnd() * 0.5) });
   }
-  const tm = new THREE.InstancedMesh(merged, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient(), side: THREE.DoubleSide }), tp.length);
+  const tuftMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient(), side: THREE.DoubleSide });
+  applyWind(tuftMat, { height: 0.7, amp: 0.34, idle: 0.3 });
+  const tm = new THREE.InstancedMesh(merged, tuftMat, tp.length);
   tp.forEach((t, i) => {
     V.set(t.x, terrainHeight(t.x, t.z) - 0.02, t.z); Q.setFromEuler(E.set(0, t.ry, 0)); S.set(t.s, t.s, t.s);
     M.compose(V, Q, S); tm.setMatrixAt(i, M); tm.setColorAt(i, t.c);

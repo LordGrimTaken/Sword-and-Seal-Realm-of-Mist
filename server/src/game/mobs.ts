@@ -1,6 +1,6 @@
 import { MOBS, MOB_SPAWNS, TUNING, ZONE } from "../data.ts";
 import { applyPoison, enrageMult, hurtPlayer, mobAttack } from "./combat.ts";
-import type { GameEvent } from "../../../shared/protocol.ts";
+import { telegraphContains, type GameEvent } from "../../../shared/protocol.ts";
 import type { Mob, Player } from "./types.ts";
 import type { World } from "./world.ts";
 import { clamp, dist, mulberry32, rand } from "./util.ts";
@@ -29,7 +29,7 @@ export function spawnMobs(world: World): Mob[] {
         def, spawnX: x, spawnZ: z, ai: "idle", threat: new Map(), target: 0, nextAttack: 0, attackUntil: 0,
         slowUntil: 0, slowMult: 1, wanderX: x, wanderZ: z, wanderAt: rand(0, 5), deadAt: 0, respawnAt: 0,
         windupUntil: 0, windupTarget: 0, windupX: 0, windupZ: 0,
-        boss: def.boss ? { engagedAt: 0, nextSlam: 0, patternIdx: 0, rr: 0, phase2: false, enraged: false, pending: [] } : undefined,
+        boss: def.boss ? { engagedAt: 0, nextSlam: 0, patternIdx: 0, rr: 0, phase2: false, phase3: false, enraged: false, pending: [] } : undefined,
       };
       m.state.id = m.id;
       out.push(m);
@@ -59,6 +59,15 @@ function pickTarget(world: World, m: Mob): Player | undefined {
   return best;
 }
 
+/** 0.4.0 pack mobs (Stone Hound): the first to fight pulls every idle packmate within `def.pack` onto the same target, once per fight. */
+function callPack(world: World, m: Mob, t: Player) {
+  m.packCalled = true;
+  for (const o of world.mobs) {
+    if (o === m || o.def.type !== m.def.type || o.ai !== "idle" || dist(o.x, o.z, m.x, m.z) > m.def.pack!) continue;
+    o.ai = "chase"; o.target = t.id; o.threat.set(t.id, o.threat.get(t.id) ?? 1);
+  }
+}
+
 function findAggro(world: World, m: Mob): Player | undefined {
   let best: Player | undefined, bd = Infinity;
   world.grid.query(m.x, m.z, m.def.aggro, (e) => {
@@ -72,13 +81,42 @@ function findAggro(world: World, m: Mob): Player | undefined {
 // ---------------- Stone Guardian boss mechanics ----------------
 function bossReset(m: Mob) {
   const b = m.boss!;
-  b.engagedAt = 0; b.pending.length = 0; b.phase2 = false; b.enraged = false; b.patternIdx = 0;
+  b.engagedAt = 0; b.pending.length = 0; b.phase2 = false; b.phase3 = false; b.beam = undefined; b.enraged = false; b.patternIdx = 0;
 }
 
 function emitTelegraph(world: World, m: Mob, x: number, z: number, radius: number, delay: number, dmg: number) {
   const ev: GameEvent = { k: "telegraph", src: m.id, x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100, radius, delay };
   world.emitNear(x, z, ev);
   m.boss!.pending.push({ at: world.time + delay, x, z, radius, dmg });
+}
+
+const r2 = (v: number) => Math.round(v * 100) / 100;
+
+/** Phase 3 rune beam: a line from the boss that holds still for `lead` s (warning), then sweeps `sweep` radians over `sweepTime` s, hurting everything on it. */
+function emitBeam(world: World, m: Mob, tgt: Player) {
+  const b = m.boss!, bd = m.def.boss!.beam, now = world.time;
+  const sgn = Math.random() < 0.5 ? -1 : 1, sweep = sgn * bd.sweep;
+  const dir0 = Math.atan2(tgt.x - m.x, tgt.z - m.z) - sweep / 2; // the sweep passes over the chosen player midway
+  b.beam = { start: now, lead: bd.lead, end: now + bd.lead + bd.sweepTime, dir0, sweep, nextTick: now + bd.lead, x: m.x, z: m.z };
+  world.emitNear(m.x, m.z, { k: "telegraph", src: m.id, x: r2(m.x), z: r2(m.z), radius: bd.len, delay: bd.lead + bd.sweepTime, shape: "line", dir: r2(dir0), len: bd.len, width: bd.width, sweep: r2(sweep), lead: bd.lead, beam: true });
+}
+const beamAngle = (bm: NonNullable<Mob["boss"]>["beam"] & object, now: number, sweepTime: number) => bm.dir0 + bm.sweep * clamp((now - bm.start - bm.lead) / sweepTime, 0, 1);
+
+/** Damage ticks along the rotating beam (after the lead-in). */
+function beamTick(world: World, m: Mob) {
+  const b = m.boss!, bm = b.beam;
+  if (!bm) return;
+  const bd = m.def.boss!.beam, now = world.time;
+  if (now >= bm.nextTick && now >= bm.start + bm.lead) {
+    const ang = beamAngle(bm, now, bd.sweepTime);
+    const geom = { shape: "line" as const, x: bm.x, z: bm.z, radius: bd.len, len: bd.len, width: bd.width };
+    for (const p of [...world.players.values()]) {
+      if (p.st === "dead" || !telegraphContains(geom, p.x, p.z, ang)) continue;
+      hurtPlayer(world, p, bd.dmg * rand(0.95, 1.05) * enrageMult(m), m.id);
+    }
+    bm.nextTick = Math.max(bm.nextTick + bd.tickEvery, now + 0.05);
+  }
+  if (now >= bm.end) b.beam = undefined;
 }
 
 /** Resolve landed slams: every living player still inside takes the damage (guard buffs apply). */
@@ -105,6 +143,11 @@ function bossFight(world: World, m: Mob) {
     b.nextSlam = Math.min(b.nextSlam, now + 1.5); b.patternIdx = 1; // the new pattern (scatter) comes right away, so phase 2 is felt even by fast kills
     world.emitNear(m.x, m.z, { k: "chat", from: "System", text: `${m.def.name}'s runes blaze crimson!`, sys: true });
   }
+  if (!b.phase3 && m.hp / m.mhp < bd.phase3At) {
+    b.phase3 = true; b.patternIdx = 0; // the beam is the first pattern of phase 3
+    b.nextSlam = Math.min(b.nextSlam, now + 1.5);
+    world.emitNear(m.x, m.z, { k: "chat", from: "System", text: `${m.def.name} cracks open - white-hot runes blaze along its body!`, sys: true });
+  }
   if (!b.enraged && now - b.engagedAt > bd.enrageAfter) {
     b.enraged = true;
     world.emitNear(m.x, m.z, { k: "chat", from: "System", text: `${m.def.name} is enraged!`, sys: true });
@@ -115,9 +158,10 @@ function bossFight(world: World, m: Mob) {
   if (!cands.length) { b.nextSlam = now + 1; return; }
   cands.sort((x, y) => x.id - y.id);
   const tgt = cands[b.rr++ % cands.length];
-  const seq = b.phase2 ? ["slam", "scatter", "stomp", "scatter"] : ["slam", "stomp"];
+  const seq = b.phase3 ? ["beam", "scatter", "slam", "beam", "stomp", "scatter"] : b.phase2 ? ["slam", "scatter", "stomp", "scatter"] : ["slam", "stomp"];
   const pat = seq[b.patternIdx++ % seq.length];
-  if (pat === "slam") emitTelegraph(world, m, tgt.x, tgt.z, bd.slam.radius, bd.slam.delay, bd.slam.dmg);
+  if (pat === "beam") emitBeam(world, m, tgt);
+  else if (pat === "slam") emitTelegraph(world, m, tgt.x, tgt.z, bd.slam.radius, bd.slam.delay, bd.slam.dmg);
   else if (pat === "stomp") emitTelegraph(world, m, m.x, m.z, bd.stomp.radius, bd.stomp.delay, bd.stomp.dmg);
   else {
     const sc = bd.scatter;
@@ -129,6 +173,36 @@ function bossFight(world: World, m: Mob) {
   }
   const gap = b.phase2 ? bd.slamEvery2 : rand(bd.slamEvery[0], bd.slamEvery[1]);
   b.nextSlam = now + gap * (b.enraged ? 0.75 : 1);
+  if (pat === "beam") b.nextSlam = Math.max(b.nextSlam, now + bd.beam.lead + bd.beam.sweepTime + 2.5); // never stack another pattern on a running beam
+}
+
+// ---------------- Fox Spirit bite / Bamboo Spirit smash: ground telegraph, then a hit on everyone still inside ----------------
+/** Returns true while the mob is busy with its swing (frozen wind-up or the strike itself). */
+function swingStep(world: World, m: Mob, t: Player, d: number): boolean {
+  const sw = m.def.swing!, now = world.time;
+  if (m.swing) {
+    if (now < m.swing.at) return true; // winding up: frozen, the shape is locked to where it was aimed
+    const dir = m.swing.dir;
+    m.swing = undefined;
+    const geom = { shape: sw.shape, x: m.x, z: m.z, radius: sw.reach, dir, arc: sw.arc, len: sw.reach, width: sw.width };
+    for (const p of [...world.players.values()]) {
+      if (p.st === "dead" || !telegraphContains(geom, p.x, p.z, dir)) continue;
+      mobAttack(world, m, p);
+    }
+    return true;
+  }
+  if (d <= m.def.attackRange && now >= m.nextAttack) {
+    const dir = Math.atan2(t.x - m.x, t.z - m.z);
+    m.r = dir; m.swing = { at: now + sw.windup, dir };
+    m.nextAttack = now + m.def.attackCd;
+    m.attackUntil = now + sw.windup + 0.3;
+    const ev: GameEvent = sw.shape === "cone"
+      ? { k: "telegraph", src: m.id, x: r2(m.x), z: r2(m.z), radius: sw.reach, delay: sw.windup, shape: "cone", dir: r2(dir), arc: sw.arc }
+      : { k: "telegraph", src: m.id, x: r2(m.x), z: r2(m.z), radius: sw.reach, delay: sw.windup, shape: "line", dir: r2(dir), len: sw.reach, width: sw.width };
+    world.emitNear(m.x, m.z, ev);
+    return true;
+  }
+  return false;
 }
 
 // ---------------- Jade Serpent lunge ----------------
@@ -161,7 +235,9 @@ function lungeStep(world: World, m: Mob, t: Player, d: number): boolean {
 
 export function updateMob(world: World, m: Mob, dt: number) {
   const now = world.time, def = m.def;
+  if (m.ai !== "chase" && m.swing) m.swing = undefined;
   if (m.ai === "dead") {
+    if (m.boss) m.boss.beam = undefined;
     if (m.visible && now >= m.deadAt + 3) m.visible = false;
     if (now >= m.respawnAt) {
       m.x = m.spawnX; m.z = m.spawnZ; m.hp = m.mhp; m.ai = "idle"; m.st = "idle"; m.visible = true;
@@ -170,11 +246,12 @@ export function updateMob(world: World, m: Mob, dt: number) {
     }
     return;
   }
-  if (m.boss) bossResolve(world, m);
+  if (m.boss) { bossResolve(world, m); beamTick(world, m); }
   const speed = def.speed * (now < m.slowUntil ? m.slowMult : 1);
   let moved = false;
 
   if (m.ai === "idle") {
+    m.packCalled = false; // 0.4.0: a pack mob may call its pack again in its next fight
     const t = findAggro(world, m);
     if (t) { m.ai = "chase"; m.target = t.id; m.threat.set(t.id, m.threat.get(t.id) ?? 1); }
     else {
@@ -197,8 +274,12 @@ export function updateMob(world: World, m: Mob, dt: number) {
     if (!t || dist(m.x, m.z, m.spawnX, m.spawnZ) > def.leash) { m.ai = "return"; m.target = 0; m.threat.clear(); m.windupUntil = 0; if (m.boss) bossReset(m); }
     else {
       if (m.boss) bossFight(world, m);
+      if (def.pack && !m.packCalled) callPack(world, m, t);
       const d = dist(m.x, m.z, t.x, t.z);
-      if (def.lunge && lungeStep(world, m, t, d)) { /* busy lunging */ }
+      if (m.boss?.beam) { // channelling the rune beam: rooted, turning with the sweep
+        m.r = beamAngle(m.boss.beam, now, def.boss!.beam.sweepTime); m.attackUntil = now + 0.3;
+      } else if (def.lunge && lungeStep(world, m, t, d)) { /* busy lunging */ }
+      else if (def.swing && swingStep(world, m, t, d)) { /* busy with a telegraphed swing */ }
       else if (d <= def.attackRange) {
         m.r = Math.atan2(t.x - m.x, t.z - m.z);
         if (now >= m.nextAttack) { m.nextAttack = now + def.attackCd; mobAttack(world, m, t); }

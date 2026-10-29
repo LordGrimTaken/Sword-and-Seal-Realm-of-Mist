@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import WebSocket from "ws";
-import { INTEREST_RADIUS, PLAYER_SPEED, PROTOCOL_VERSION, TICK_RATE, WORLD_SIZE } from "../../shared/protocol.ts";
+import { INTEREST_RADIUS, PLAYER_SPEED, PROTOCOL_VERSION, TICK_RATE, WORLD_SIZE, telegraphContains } from "../../shared/protocol.ts";
 import type { ClassId, ClientMsg, EntityState, GameEvent, InvItem, MobType, ServerMsg, SkillDef, ZoneInfo } from "../../shared/protocol.ts";
 import { DatabaseSync } from "node:sqlite";
 import { MOBS, MOB_SPAWNS, ZONE } from "../src/data.ts";
@@ -57,12 +57,16 @@ class Bot {
   brain?: NodeJS.Timeout; mode: "idle" | "walk" | "fight" | "boss" = "idle";
   walkTo = { x: 0, z: 0 };
   castAttempts = 0;
+  qi = 100; // own Qi from snapshots (0.4.0); bots keep a reserve for their defensive skill like a sensible player
   // v2: inventory, telegraphs, dodge
   inv: InvItem[] | null = null; invMsgs = 0; order: string[] = [];
   mobFilter?: MobType;
-  tele: Array<{ x: number; z: number; radius: number; delayMs: number; at: number; landAt: number; src: number }> = [];
+  tele: Array<{ x: number; z: number; radius: number; delayMs: number; at: number; landAt: number; src: number; shape?: "circle" | "cone" | "line"; dir?: number; arc?: number; len?: number; width?: number; sweep?: number; leadMs?: number; beam?: boolean }> = [];
+  beamsSeen = 0;
   teleLog: Array<{ src: number; radius: number; delay: number; at: number; landAt: number; posAtLand?: { x: number; z: number }; distAtLand?: number; slamHit?: boolean; done?: boolean }> = [];
   dmgTaken: Array<{ t: number; src: number; amount: number }> = [];
+  /** TEST_MODE only: in boss fights top the bot up with /testheal when low, so a stray hit does not cost it its place (and boss credit). Counted and reported, never silent. */
+  safetyNet = false; netHeals = 0; private lastNet = 0;
   dodgeOn = false; dodging = false; dodgePt?: { x: number; z: number };
 
   pw: string | undefined = "botpass-1234";
@@ -118,6 +122,7 @@ class Bot {
         this.lastSnapAt = now;
         if (m.ack < this.ack) this.ackBackwards++;
         this.ack = m.ack; this.lastTick = m.tick;
+        if (typeof m.qi === "number") this.qi = m.qi;
         for (const id of m.gone) {
           if (!this.ents.has(id)) this.badGone++;
           this.ents.delete(id); this.goneIds.add(id);
@@ -139,9 +144,11 @@ class Bot {
 
   private onTelegraph(e: Extract<GameEvent, { k: "telegraph" }>) {
     const at = Date.now(), delayMs = e.delay * 1000;
-    const rec = { x: e.x, z: e.z, radius: e.radius, delayMs, at, landAt: at + delayMs, src: e.src };
+    const rec = { x: e.x, z: e.z, radius: e.radius, delayMs, at, landAt: at + delayMs, src: e.src, shape: e.shape, dir: e.dir, arc: e.arc, len: e.len, width: e.width, sweep: e.sweep, leadMs: (e.lead ?? 0) * 1000, beam: e.beam };
     this.tele.push(rec);
     if (this.tele.length > 40) this.tele.splice(0, 20);
+    if (e.beam) this.beamsSeen++;
+    if (e.shape && e.shape !== "circle") return; // cones/lines/beams are not slam circles: the circle statistics below only cover those
     const log: (typeof this.teleLog)[number] = { src: e.src, radius: e.radius, delay: e.delay, at, landAt: rec.landAt };
     this.teleLog.push(log);
     // sample where we stand at landing, then (after the damage had time to arrive) whether a slam-sized hit reached us
@@ -152,20 +159,39 @@ class Bot {
     }, delayMs + 800);
   }
 
-  /** Leave any active danger circle (with margin) before it lands; returns true while it is steering. */
+  /** Leave any active danger zone (with margin) before it lands; returns true while it is steering. */
   private dodge(me: EntityState): boolean {
     if (!this.dodgeOn) return false;
     const now = Date.now();
     const act = this.tele.filter((t) => now < t.landAt + 150 && now > t.at - 50);
     if (!act.length) { this.dodgePt = undefined; return false; }
-    const inside = (x: number, z: number, m: number) => act.some((t) => dist(x, z, t.x, t.z) < t.radius + m);
-    if (!this.dodgePt && !inside(me.x, me.z, 1.0)) return false;
-    if (!this.dodgePt || inside(this.dodgePt.x, this.dodgePt.z, 0.8)) {
+    const beam = act.find((t) => t.beam);
+    const flat = act.filter((t) => !t.beam);
+    const inside = (x: number, z: number, m: number) => flat.some((t) => {
+      if (!t.shape || t.shape === "circle") return dist(x, z, t.x, t.z) < t.radius + m;
+      if (t.shape === "cone") return telegraphContains({ ...t, radius: t.radius + m, arc: (t.arc ?? 1.4) * 1.3 + 0.3 }, x, z);
+      return telegraphContains({ ...t, len: (t.len ?? t.radius) + m, width: (t.width ?? 2) + 2 * m }, x, z);
+    });
+    // the rotating beam is checked along the whole path and for as long as it lasts: where it WILL be, not where it is
+    const beamAt = (T: number) => { const f = Math.max(0, Math.min(1, (T - beam!.at - beam!.leadMs!) / (beam!.delayMs - beam!.leadMs!))); return (beam!.dir ?? 0) + (beam!.sweep ?? 0) * f; };
+    const inBeam = (x: number, z: number, T: number, m: number) => !!beam && telegraphContains({ shape: "line", x: beam.x, z: beam.z, radius: beam.len ?? 28, len: (beam.len ?? 28) + m, width: (beam.width ?? 2.8) + 2 * m }, x, z, beamAt(T));
+    const pathSafe = (px: number, pz: number, bm: number) => {
+      const d = dist(me.x, me.z, px, pz), ux = d ? (px - me.x) / d : 0, uz = d ? (pz - me.z) / d : 0;
+      const tEnd = Math.max(d / PLAYER_SPEED, 0) + 0.2, tBeam = beam ? Math.max(0, beam.landAt - now) / 1000 + 0.2 : 0;
+      for (let t = 0; t <= Math.max(tEnd, tBeam); t += 0.1) {
+        const k = Math.min(d, PLAYER_SPEED * t);
+        if (inBeam(me.x + ux * k, me.z + uz * k, now + t * 1000 + 120, bm)) return false;
+      }
+      return true;
+    };
+    if (!this.dodgePt && !inside(me.x, me.z, 1.0) && !(beam && !pathSafe(me.x, me.z, 1.6))) return false;
+    if (!this.dodgePt || inside(this.dodgePt.x, this.dodgePt.z, 0.8) || (beam && !pathSafe(this.dodgePt.x, this.dodgePt.z, 1.4))) {
       const tgt = this.nearestMob(this.mode === "boss");
       let best: { x: number; z: number } | undefined, bs = Infinity;
-      for (let r = 2; r <= 18; r += 1.5) for (let a = 0; a < 360; a += 20) {
+      for (let r = 2; r <= 22; r += 1.5) for (let a = 0; a < 360; a += 20) {
         const x = me.x + Math.cos((a * Math.PI) / 180) * r, z = me.z + Math.sin((a * Math.PI) / 180) * r;
         if (Math.abs(x) > 98 || Math.abs(z) > 98 || inside(x, z, 1.4)) continue;
+        if (beam && !pathSafe(x, z, 1.6)) continue;
         const score = r + (tgt ? 0.15 * dist(x, z, tgt.e.x, tgt.e.z) : 0);
         if (score < bs) { bs = score; best = { x, z }; }
       }
@@ -193,10 +219,14 @@ class Bot {
 
   private ready(skill: number) {
     const def = this.skills[skill - 1];
-    return def && Date.now() - (this.lastCast[skill] ?? 0) > def.cooldown * 1000 + 80;
+    if (!def || Date.now() - (this.lastCast[skill] ?? 0) <= def.cooldown * 1000 + 80) return false;
+    const defensive = this.cls === "physician" ? skill === 2 || skill === 4 : skill === 4;
+    const reserve = defensive ? 0 : this.cls === "physician" ? 22 : 15; // keep enough Qi for Qi Guard / Wind Step / Spring Rain
+    return this.qi >= (def.qi ?? 0) + reserve;
   }
   private cast(skill: number, extra: Record<string, unknown>) {
     this.lastCast[skill] = Date.now(); this.castAttempts++;
+    this.qi -= this.skills[skill - 1]?.qi ?? 0;
     this.send({ t: "cast", skill, ...extra });
   }
 
@@ -218,6 +248,7 @@ class Bot {
     const me = this.me;
     if (!me) return;
     if (me.st === "dead") return this.input(0, 0);
+    if (this.safetyNet && me.hp / me.mhp < 0.4 && Date.now() - this.lastNet > 1800) { this.lastNet = Date.now(); this.netHeals++; this.send({ t: "chat", text: "/testheal" }); }
     this.dodging = this.dodge(me);
     if (this.mode === "idle") return;
     if (this.mode === "walk") return this.steer(this.walkTo.x, this.walkTo.z, 1);
@@ -691,6 +722,10 @@ async function main() {
     await sleep(6000); // let the boss reset (leash) after the stand-in left
     const trio = [await mk("BSword", "sword", 6), await mk("BTali", "talisman", 6), await mk("BMed", "physician", 6)];
     const watcher = trio[0];
+    // Spectator for H3: parked outside the boss's reach (aggro 12, beam 28) but inside interest radius 60, so it sees the death
+    // and the respawn at the real time, whatever the fighters do afterwards (turn-in teleports them away).
+    const spec = await mk("BSpec", "sword", 15);
+    spec.send({ t: "chat", text: `/testtp ${BOSS.x} ${BOSS.z - 38}` });
     trio[0].send({ t: "chat", text: `/testtp ${BOSS.x} ${BOSS.z - 18}` });
     trio[1].send({ t: "chat", text: `/testtp ${BOSS.x - 4} ${BOSS.z - 24}` });
     trio[2].send({ t: "chat", text: `/testtp ${BOSS.x + 4} ${BOSS.z - 24}` });
@@ -698,18 +733,21 @@ async function main() {
     const bossEnt = () => [...watcher.ents.values()].find((e) => e.mob === "stone_guardian");
     check("boss visible at the shrine, lv8, 2000 HP", !!bossEnt() && bossEnt()!.lv === 8 && bossEnt()!.mhp === 2000, `lv${bossEnt()?.lv} hp ${bossEnt()?.hp}/${bossEnt()?.mhp}`);
     const bossId = bossEnt()?.id ?? -1;
-    for (const b of trio) { b.mode = "boss"; b.mobFilter = "stone_guardian"; b.dodgeOn = true; b.walkTo = { x: BOSS.x, z: BOSS.z - 14 }; b.startBrain(); }
+    for (const b of trio) { b.mode = "boss"; b.mobFilter = "stone_guardian"; b.dodgeOn = true; b.safetyNet = true; b.walkTo = { x: BOSS.x, z: BOSS.z - 14 }; b.startBrain(); }
     const tFight = Date.now();
     let firstHit = 0;
     const killed = await until(() => { if (!firstHit && trio.some((b) => b.count("damage", (e) => e.src === b.id && e.dst === bossId) > 0)) firstHit = Date.now(); return trio.some((b) => b.count("death", (e) => e.id === bossId) > 0); }, 170_000, 200);
     const tKill = Date.now();
+    // the spectator timestamps the respawn the moment it happens (the fighters spend ~30 s on the turn-in meanwhile)
+    let respawnAt = 0;
+    const respawnPoll = setInterval(() => { const e = spec.ents.get(bossId); if (!respawnAt && Date.now() - tKill > 3000 && e && e.st !== "dead" && e.hp === e.mhp) respawnAt = Date.now(); }, 50);
     const ttk = (tKill - (firstHit || tFight)) / 1000;
     const bossPos = bossEnt() ?? { x: BOSS.x, z: BOSS.z };
     const near = trio.map((b) => b.me ? dist(b.me.x, b.me.z, bossPos.x, bossPos.z) : 999);
     for (const b of trio) b.input(0, 0);
     const dmgByCls = trio.map((b) => `${b.cls}:${b.count("damage", (e) => e.src === b.id && e.dst === bossId) > 0 ? Math.round(b.evs.filter((e) => e.k === "damage" && e.src === b.id && e.dst === bossId).reduce((n, e: any) => n + e.amount, 0)) : 0}`).join(" ");
     const teles = trio.flatMap((b) => b.teleLog);
-    console.log(`  info: boss TTK ${ttk.toFixed(1)}s; damage dealt ${dmgByCls}; bot deaths ${trio.map((b) => b.count("death", (e) => e.id === b.id)).join("/")}; telegraphs seen ${trio[0].teleLog.length}`);
+    console.log(`  info: boss TTK ${ttk.toFixed(1)}s; damage dealt ${dmgByCls}; bot deaths ${trio.map((b) => b.count("death", (e) => e.id === b.id)).join("/")}; safety-net heals ${trio.map((b) => b.netHeals).join("/")}; telegraphs seen ${trio[0].teleLog.length}`);
     check("lv6 sword+talisman+physician kill the Stone Guardian", killed, `${ttk.toFixed(1)}s from first hit`);
     await sleep(1000);
     const evalT = teles.filter((t) => t.done && t.distAtLand !== undefined);
@@ -719,6 +757,9 @@ async function main() {
     const sizes = new Set(trio[0].teleLog.map((t) => t.radius));
     const scatter = trio[0].teleLog.filter((t, i, a) => a.some((u, j) => j !== i && Math.abs(u.at - t.at) < 60 && u.radius === t.radius && t.radius < 6)).length;
     check("phase 2 (<50% HP): ring of 3 smaller telegraphs appears", scatter >= 3 && trio[0].sys("runes blaze"), `radii seen ${[...sizes].join("/")}, scatter circles ${scatter}`);
+
+    const beamEv = trio.flatMap((b) => b.evs.filter((e): e is Extract<GameEvent, { k: "telegraph" }> => e.k === "telegraph" && !!e.beam));
+    check("phase 3 (<25% HP): 'cracks open' message + a rotating line beam telegraph (3 s sweep, ~90 degrees)", trio[0].sys("cracks open") && beamEv.length >= 1 && beamEv.every((e) => e.shape === "line" && Math.abs(Math.abs(e.sweep ?? 0) - Math.PI / 2) < 0.02 && (e.delay - (e.lead ?? 0)) === 3 && (e.width ?? 0) > 0 && (e.len ?? 0) > 10), `${new Set(beamEv.map((e) => `${e.x},${e.z},${e.dir}`)).size} beams, delay ${beamEv[0]?.delay} lead ${beamEv[0]?.lead} sweep ${beamEv[0]?.sweep}`);
 
     // quest credit: everyone near the boss at death was credited
     const credited = trio.map((b) => b.sys("[Quest 4/4] Defeat the Stone Guardian: 1/1 - objective complete"));
@@ -743,11 +784,11 @@ async function main() {
 
     // --- H3: respawn timing + leash (TEST_BOSS_RESPAWN=20 s in test mode) ---
     for (const t of trio) { t.stop(); t.input(0, 0); } // brains off: the observer must stay where the test puts it
-    const obs = trio[0];
-    obs.send({ t: "chat", text: `/testtp ${BOSS.x} ${BOSS.z - 22}` }); await sleep(600);
-    const diedMs = obs.evs.filter((e) => e.k === "death" && e.id === bossId).length ? tKill : Date.now();
-    const back = await until(() => { const e = obs.ents.get(bossId); return !!e && e.st !== "dead" && e.hp === e.mhp; }, 40_000, 100);
-    const rs = (Date.now() - diedMs) / 1000;
+    const obs = spec;
+    const sawDeath = !!obs.evs.find((e) => e.k === "death" && e.id === bossId);
+    const back = sawDeath && await until(() => respawnAt > 0, 40_000, 100);
+    clearInterval(respawnPoll);
+    const rs = (respawnAt - tKill) / 1000;
     check("boss respawns at full HP (test-mode 20 s timer; production 120 s)", back && rs >= 19 && rs <= 26, `${rs.toFixed(1)}s after death`);
     // leash: pull the respawned boss, then leave -> it returns to full HP
     obs.send({ t: "chat", text: `/testtp ${BOSS.x} ${BOSS.z - 12}` }); await sleep(400);
@@ -759,6 +800,7 @@ async function main() {
     const reset = await until(() => { const e = obs.ents.get(bossId); return !!e && e.hp === e.mhp && Math.abs(e.z - BOSS.z) < 2; }, 15_000, 200);
     check("boss leashes: puller leaves -> boss returns to its post and heals to full", hpHurt < hurt.mhp && reset, `hp after hit ${hpHurt}/${hurt.mhp}, reset=${reset}`);
     for (const b of trio) b.close();
+    spec.close();
   }
 
   // ===== I. localization: scripted session scanned for CJK, plus DB migration =====
