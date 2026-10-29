@@ -61,6 +61,21 @@ export async function hashFile(file, signal) {
 
 const exists = (p) => { try { fs.lstatSync(p); return true; } catch { return false; } };
 
+/** rename that survives Windows antivirus / indexer briefly locking a freshly written file (EPERM/EBUSY/EACCES). */
+function renameRetry(from, to, tries = 12) {
+  for (let i = 0; ; i++) {
+    try { fs.renameSync(from, to); return; }
+    catch (e) {
+      if (!["EPERM", "EBUSY", "EACCES", "ENOTEMPTY"].includes(e.code)) throw e;
+      if (i >= tries) { // scanner still holds the file: copying only needs read access, so fall back to copy + delete
+        try { fs.copyFileSync(from, to); try { fs.unlinkSync(from); } catch { /* leftover .new is harmless */ } return; } catch { throw e; }
+      }
+      try { if (e.code !== "EBUSY" && fs.existsSync(to) && fs.statSync(to).isFile()) fs.unlinkSync(to); } catch { /* still locked */ }
+      const until = Date.now() + 150 * (i + 1); while (Date.now() < until) { /* short sync wait */ }
+    }
+  }
+}
+
 export class Updater extends EventEmitter {
   constructor(opts) {
     super();
@@ -91,7 +106,7 @@ export class Updater extends EventEmitter {
     fs.mkdirSync(this.installDir, { recursive: true });
     const tmp = this.statePath() + ".tmp";
     fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
-    fs.renameSync(tmp, this.statePath());
+    renameRetry(tmp, this.statePath());
   }
 
   async fetchManifest({ signal } = {}) {
@@ -209,8 +224,17 @@ export class Updater extends EventEmitter {
         const dest = safeJoin(this.installDir, n.entry.path);
         ensureDirSafe(this.installDir, dest);
         try { if (fs.lstatSync(dest).isSymbolicLink()) fs.unlinkSync(dest); } catch { /* absent */ }
-        fs.renameSync(dest + ".new", dest);
+        renameRetry(dest + ".new", dest);
         if (n.entry.mode && process.platform !== "win32") { try { fs.chmodSync(dest, parseInt(n.entry.mode, 8)); } catch { /* best effort */ } }
+      }
+      // make sure every file really is on disk (security software can quietly remove or change a fresh download)
+      for (const n of need) {
+        let ok = false;
+        try { ok = fs.statSync(safeJoin(this.installDir, n.entry.path)).size === n.entry.size; } catch { /* missing */ }
+        if (!ok) {
+          const e = new Error(`"${n.entry.path.split("/").pop()}" disappeared right after install. Windows Security or another antivirus probably removed it. Add the game folder to its exclusions (Windows Security > Virus & threat protection > Manage settings > Exclusions), then press Repair.`);
+          e.code = "FILE_VANISHED"; throw e;
+        }
       }
       for (const rel of removed) {
         let abs; try { abs = safeJoin(this.installDir, rel); } catch { continue; }
@@ -347,11 +371,11 @@ export class Updater extends EventEmitter {
         const x = new Error(`Corrupt compressed download (${err.message})`); x.hashMismatch = true; throw x;
       }
       hash = h.digest("hex");
-      if (hash === e.sha256 && fs.statSync(tmp).size === e.size) { fs.renameSync(tmp, staged); fs.rmSync(part, { force: true }); return; }
+      if (hash === e.sha256 && fs.statSync(tmp).size === e.size) { renameRetry(tmp, staged); fs.rmSync(part, { force: true }); return; }
       fs.rmSync(tmp, { force: true });
     } else {
       hash = await hashFile(part, sig);
-      if (hash === e.sha256 && fs.statSync(part).size === e.size) { fs.renameSync(part, staged); return; }
+      if (hash === e.sha256 && fs.statSync(part).size === e.size) { renameRetry(part, staged); return; }
     }
     const x = new Error(`Checksum mismatch for ${e.path}`); x.hashMismatch = true; throw x;
   }

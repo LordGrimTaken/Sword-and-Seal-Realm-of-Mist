@@ -8,6 +8,7 @@ export function normalizeNews(raw) {
   const str = (v, max) => (typeof v === "string" ? v : v == null ? "" : String(v)).slice(0, max);
   const items = raw.filter((n) => n && typeof n === "object").slice(0, 100).map((n, i) => ({
     id: str(n.id ?? i, 80), title: str(n.title, 160), date: str(n.date, 40), body: str(n.body, 8000),
+    tag: str(n.tag, 24), banner: str(n.banner, 24), summary: str(n.summary, 300),   // optional: label chip, painted banner key (valley|blades|scroll|lantern), card blurb
   })).filter((n) => n.title);
   const t = (d) => { const x = Date.parse(d); return Number.isNaN(x) ? 0 : x; };
   items.sort((a, b) => t(b.date) - t(a.date));

@@ -10,7 +10,7 @@ export class Settings {
   }
   get() { return { ...this.data }; }
   set(patch) {
-    const allowed = ["installDir", "serverUrl", "closeOnPlay", "remember", "lastName"];
+    const allowed = ["installDir", "serverUrl", "closeOnPlay", "remember", "lastName", "defenderAsked"];
     for (const k of allowed) if (k in patch) this.data[k] = patch[k];
     if (typeof this.data.installDir !== "string" || !this.data.installDir) this.data.installDir = this.defaults.installDir;
     this.data.serverUrl = String(this.data.serverUrl || "").trim();

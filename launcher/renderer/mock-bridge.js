@@ -1,5 +1,6 @@
 // In-browser mock of the preload bridge. Active only when the page URL has ?mock=1 and no real bridge exists.
-// Scenes (?scene=): login | ready | updating | error | outdated | install   Extra: &fast=1 speeds up the fake download, &paused=1 freezes at 42%.
+// Scenes (?scene=): login | loginerror | register | install | downloading (mid-progress, frozen) | verifying | ready | update | offline | launching | outdated
+// Extra: &fast=1 speeds up the fake download. Clicking buttons in any scene runs the fake flows (sign in, install, play).
 (() => {
   const q = new URLSearchParams(location.search);
   if (q.get("mock") !== "1" || window.launcherApi) return;
@@ -7,46 +8,50 @@
   const handlers = {};
   const emit = (ev, d) => (handlers[ev] || []).forEach((f) => f(d));
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const settings = { installDir: "/home/player/.local/share/SwordAndSeal/Game", serverUrl: "", closeOnPlay: false, remember: true, lastName: scene === "login" ? "Wanderer" : "" };
+  const settings = { installDir: "/home/player/.local/share/SwordAndSeal/Game", serverUrl: "", closeOnPlay: false, remember: true, lastName: ["login", "loginerror", "register"].includes(scene) ? "Wanderer" : "" };
   const news = { cached: false, items: [
-    { id: "0.3.0", title: "English localization", date: "2026-10-28", body: "All player-facing text is now English; the Chinese identity is carried by aesthetics only: ink wash, vermilion seals, brush lettering, paper scrolls.\n\n- New fonts: Ma Shan Zheng for display and Noto Serif for body text.\n- Hand-drawn brush pictograms replace the old seal icons.\n- Crits are an ink splash; quest completion stamps a vermilion seal." },
-    { id: "0.2.0", title: "Desktop delivery", date: "2026-10-12", body: "The desktop app now starts its own server on a free local port and stops it when you quit.\n\n- Lantern Keeper Mei has a real errand: bring five Bamboo Fiber for a Paper Lantern.\n- Windows, macOS and Linux installers are built by the release workflow." },
-    { id: "0.1.0", title: "First playable", date: "2026-09-30", body: "Three classes, four skills each, a telegraphed Stone Guardian and Elder Lin's quest chain in Cloudmist Valley." },
+    { id: "open-for-testing", tag: "Announcement", banner: "valley", title: "Open for testing", date: "2026-10-28", body: "The doors of the Realm of Mist are open.\n\n- Create a character and pick a class.\n- Hunt in the bamboo groves.\n- Party up with other testers.", summary: "The doors of the Realm of Mist are open. Sign in, let the launcher fetch the game, and step into Cloudmist Valley." },
+    { id: "combat-changes", tag: "Coming soon", banner: "blades", title: "Combat changes in 0.4", date: "2026-10-27", body: "x", summary: "Dodge rolls and a Qi pool are on the way. Every skill will cost Qi, so timing matters." },
+    { id: "how-to-play", tag: "Guide", banner: "scroll", title: "How to play", date: "2026-10-26", body: "x", summary: "Move with WASD, fight with keys 1 to 4, and talk to villagers with F." },
   ] };
+  const ver = "0.3.0";
   const st = {
     phase: "idle", error: null, offline: false, game: null,
-    update: { state: "ready", installedVersion: "0.3.0", latestVersion: "0.3.0" },
-    status: { online: true, players: 12, latencyMs: 34, version: "0.3.0", checked: true },
+    update: { state: "ready", installedVersion: ver, latestVersion: ver },
+    status: { online: true, players: 12, latencyMs: 34, version: ver, checked: true },
   };
-  let session = null, cancelled = false, running = false;
-  if (scene !== "login" && scene !== "error") session = { name: "Wanderer" };
-  if (scene === "install") st.update = { state: "not-installed", installedVersion: null, latestVersion: "0.3.0", needBytes: 1300863 };
-  if (scene === "updating") { st.phase = "updating"; st.update = { state: "update-available", installedVersion: "0.2.0", latestVersion: "0.3.0", needBytes: 48400000 }; }
-  if (scene === "outdated") st.update = { state: "launcher-outdated", installedVersion: "0.3.0", latestVersion: "0.4.0", minLauncherVersion: "1.2.0" };
-  if (scene === "error") { st.offline = true; st.error = "Cannot reach the update server. You can still play the installed version."; st.status = { online: false, players: 0, latencyMs: null, checked: true }; st.update = { state: "ready", installedVersion: "0.3.0", latestVersion: "0.3.0", offline: true }; news.cached = true; }
+  let session = ["login", "loginerror", "register"].includes(scene) ? null : { name: "Wanderer" };
+  let cancelled = false, running = false;
+  if (scene === "install") st.update = { state: "not-installed", installedVersion: null, latestVersion: ver, needBytes: 46200000 };
+  if (scene === "downloading") { st.phase = "updating"; st.update = { state: "not-installed", installedVersion: null, latestVersion: ver, needBytes: 46200000 }; }
+  if (scene === "verifying") { st.phase = "updating"; st.update = { state: "not-installed", installedVersion: null, latestVersion: ver, needBytes: 46200000 }; }
+  if (scene === "update") st.update = { state: "update-available", installedVersion: "0.2.0", latestVersion: ver, needBytes: 12400000 };
+  if (scene === "outdated") st.update = { state: "launcher-outdated", installedVersion: ver, latestVersion: "0.4.0", minLauncherVersion: "1.2.0" };
+  if (scene === "offline") { st.status = { online: false, players: 0, latencyMs: null, checked: true }; }
+  if (scene === "launching") { st.phase = "playing"; st.game = { running: true }; }
   const snapshot = () => JSON.parse(JSON.stringify(st));
   const push = () => emit("state", snapshot());
+  const FILES = ["game/client/dist/assets/index-CfaYlupf.js", "game/electron/linux/resources/app.asar", "game/server/dist/server.mjs", "game/client/dist/index.html"];
 
   async function fakeDownload() {
-    const total = 48400000; const fast = q.get("fast") === "1"; cancelled = false;
+    const total = 46200000, fast = q.get("fast") === "1"; cancelled = false;
     st.phase = "updating"; st.error = null; push();
     emit("progress", { phase: "checking", pct: 0 }); await wait(fast ? 50 : 500);
-    const files = ["game/client/dist/assets/index-CfaYlupf.js", "game/server/dist/server.mjs", "game/shared/protocol.ts", "game/client/dist/index.html"];
     for (let i = 0; i <= 100; i += 2) {
       if (cancelled) { st.phase = "idle"; push(); return { ok: false, cancelled: true, error: "Cancelled." }; }
       const pct = i / 100;
-      emit("progress", { phase: "downloading", pct, bytesDone: total * pct, bytesTotal: total, speed: 6.4e6, etaSec: (1 - pct) * total / 6.4e6, file: files[Math.floor(i / 26)], filesDone: Math.floor(i / 26), filesTotal: 4 });
-      await wait(fast ? 5 : 60);
+      emit("progress", { phase: "downloading", pct, bytesDone: total * pct, bytesTotal: total, speed: 6.4e6, etaSec: (1 - pct) * total / 6.4e6, file: FILES[Math.min(3, Math.floor(i / 26))], filesDone: Math.floor(pct * 39), filesTotal: 39 });
+      await wait(fast ? 5 : 90);
     }
-    emit("progress", { phase: "finalizing", pct: 1 }); await wait(fast ? 20 : 600);
-    st.phase = "idle"; st.update = { state: "ready", installedVersion: "0.3.0", latestVersion: "0.3.0" }; push();
+    emit("progress", { phase: "finalizing", pct: 1 }); await wait(fast ? 20 : 900);
+    st.phase = "idle"; st.update = { state: "ready", installedVersion: ver, latestVersion: ver }; push();
     return { ok: true };
   }
 
   window.launcherApi = {
     mock: true,
     async info() {
-      return { launcherVersion: "1.0.0", platform: "linux", config: { website: "https://swordandseal.com", support: "https://swordandseal.com/support", gameServerUrl: "wss://play.swordandseal.com", apiBaseUrl: "https://play.swordandseal.com", releaseBaseUrl: "https://dl.swordandseal.com/game" }, settings: { ...settings }, session, snapshot: snapshot() };
+      return { launcherVersion: "1.1.0", platform: "linux", config: { website: "https://swordandseal.com", support: "https://swordandseal.com/support", gameServerUrl: "wss://play.swordandseal.com", apiBaseUrl: "https://play.swordandseal.com", releaseBaseUrl: "https://dl.swordandseal.com/game" }, settings: { ...settings }, session, snapshot: snapshot() };
     },
     on(ev, f) { (handlers[ev] ||= []).push(f); return () => { handlers[ev] = handlers[ev].filter((x) => x !== f); }; },
     async auth(kind, name, pw) {
@@ -59,13 +64,13 @@
     async refresh() { push(); return st.update; },
     async refreshStatus() { emit("status", st.status); return st.status; },
     async getNews() { return news; },
-    async startUpdate() { if (q.get("paused") === "1") return { ok: true }; return fakeDownload(); },
+    async startUpdate() { return fakeDownload(); },
     async verify() { return fakeDownload(); },
     cancelUpdate() { cancelled = true; return { ok: true }; },
     async play() {
       if (running) return { ok: false, error: "Busy." };
       running = true; st.phase = "playing"; st.game = { running: true }; push();
-      setTimeout(() => { running = false; st.phase = "idle"; st.game = null; push(); }, 4000);
+      setTimeout(() => { running = false; st.phase = "idle"; st.game = null; push(); }, 8000);
       return { ok: true, kind: "mock" };
     },
     async setSettings(p) { Object.assign(settings, p); return { ...settings }; },
@@ -73,8 +78,7 @@
     openExternal(u) { console.log("openExternal", u); },
     minimize() {}, close() {},
   };
-  if (scene === "updating") {
-    // hold the progress UI at 42% for screenshots
-    setTimeout(() => emit("progress", { phase: "downloading", pct: 0.42, bytesDone: 20328000, bytesTotal: 48400000, speed: 6.4e6, etaSec: 4.4, file: "game/client/dist/assets/index-CfaYlupf.js", filesDone: 17, filesTotal: 39 }), 100);
-  }
+  // frozen scenes for screenshots
+  if (scene === "downloading") setTimeout(() => emit("progress", { phase: "downloading", pct: 0.42, bytesDone: 19404000, bytesTotal: 46200000, speed: 6.4e6, etaSec: 4.2, file: FILES[1], filesDone: 17, filesTotal: 39 }), 150);
+  if (scene === "verifying") setTimeout(() => emit("progress", { phase: "verifying", pct: 0.68, filesDone: 27, filesTotal: 39, file: "game/client/dist/assets/index-CfaYlupf.js" }), 150);
 })();

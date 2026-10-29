@@ -5,5 +5,5 @@
   "website": "https://swordandseal.com",
   "support": "https://swordandseal.com/support",
   "channel": "stable",
-  "launcherUpdate": { "enabled": false, "url": "" }
+  "launcherUpdate": { "enabled": true, "url": "https://dl.swordandseal.com/launcher/feed" }
 }

@@ -9,6 +9,12 @@ import { authenticate, checkHealth } from "./auth.js";
 import { launchGame } from "./game.js";
 import { Settings } from "./settings.js";
 
+/** Default game folder: Windows uses %LOCALAPPDATA% (not the roaming profile), others keep <userData>/Game. */
+export function defaultInstallDir(userData, platform = process.platform) {
+  if (platform === "win32" && process.env.LOCALAPPDATA) return path.join(process.env.LOCALAPPDATA, "Sword and Seal", "Game");
+  return path.join(userData, "Game");
+}
+
 export class LauncherCore extends EventEmitter {
   /** opts: { config, userData, launcherVersion, platform?, tmpDir? } */
   constructor(opts) {
@@ -20,8 +26,9 @@ export class LauncherCore extends EventEmitter {
     this.tmpDir = opts.tmpDir || os.tmpdir();
     fs.mkdirSync(this.userData, { recursive: true });
     this.settings = new Settings(path.join(this.userData, "settings.json"), {
-      installDir: path.join(this.userData, "Game"), serverUrl: "", closeOnPlay: false, remember: true, lastName: "",
+      installDir: defaultInstallDir(this.userData, this.platform), serverUrl: "", closeOnPlay: false, remember: true, lastName: "",
     });
+    this._migrateLegacyInstallDir();
     this.session = null; // { name, token, expiresAt } (memory only)
     this._pw = null;     // memory only; used to mint a fresh one-use token at PLAY
     this.phase = "idle"; // idle | checking | updating | playing
@@ -31,6 +38,59 @@ export class LauncherCore extends EventEmitter {
     this.game = null;
     this.status = { online: false, players: 0, version: null, latencyMs: null, checked: false };
     this._mkUpdater();
+  }
+
+  /** Windows: the game used to default to %APPDATA% (roaming profile). Move an unfinished or empty legacy default to the local folder. */
+  _migrateLegacyInstallDir() {
+    try {
+      if (this.platform !== "win32") return;
+      const legacy = path.join(this.userData, "Game");
+      const cur = this.settings.get().installDir;
+      if (path.resolve(cur) !== path.resolve(legacy)) return;
+      let st = null;
+      try { st = JSON.parse(fs.readFileSync(path.join(legacy, ".install.json"), "utf8")); } catch { /* none */ }
+      if (st && st.version && !st.updating) return; // a working install stays where it is
+      const next = defaultInstallDir(this.userData, this.platform);
+      if (next !== legacy) { this.settings.set({ installDir: next }); this.log(`install folder moved to ${next}`); }
+    } catch { /* keep the old folder */ }
+  }
+
+  /** Find where the game is (or should be) installed. Looks for an existing install first, otherwise recommends a folder with enough free space. */
+  async detectInstallDir() {
+    const NEED = 2 * 1024 ** 3; // game plus working room
+    const name = "Sword and Seal";
+    const home = os.homedir();
+    const cands = [this.settings.get().installDir, path.join(this.userData, "Game")];
+    if (this.platform === "win32") {
+      if (process.env.LOCALAPPDATA) cands.push(path.join(process.env.LOCALAPPDATA, name, "Game"));
+      for (let c = 67; c <= 90; c++) { const d = String.fromCharCode(c) + ":\\"; if (fs.existsSync(d)) cands.push(path.join(d, "Games", name), path.join(d, name)); }
+    } else {
+      cands.push(path.join(home, "Games", name), path.join(home, ".local", "share", name, "Game"), path.join(home, "Applications", name));
+    }
+    const seen = new Set(); let found = null;
+    for (const c of cands) {
+      const dir = path.resolve(c); if (seen.has(dir)) continue; seen.add(dir);
+      try {
+        const st = JSON.parse(fs.readFileSync(path.join(dir, ".install.json"), "utf8"));
+        if (st && st.version) { found = { dir, version: st.version, updating: !!st.updating }; break; }
+      } catch { /* not here */ }
+    }
+    const free = async (d) => { try { let p = path.resolve(d); while (!fs.existsSync(p) && path.dirname(p) !== p) p = path.dirname(p); const s = await fs.promises.statfs(p); return Number(s.bavail) * Number(s.bsize); } catch { return null; } };
+    if (found) {
+      const f = await free(found.dir);
+      return { ok: true, dir: found.dir, existing: true, reason: `Found an existing install (v${found.version}${found.updating ? ", unfinished" : ""}).`, freeBytes: f };
+    }
+    let best = { dir: defaultInstallDir(this.userData, this.platform) }; best.free = await free(best.dir);
+    if (best.free !== null && best.free < NEED) {
+      let alt = null;
+      if (this.platform === "win32") for (let c = 67; c <= 90; c++) {
+        const d = String.fromCharCode(c) + ":\\"; if (!fs.existsSync(d)) continue;
+        const f = await free(d); if (f !== null && f >= NEED && (!alt || f > alt.free)) alt = { dir: path.join(d, "Games", name), free: f };
+      }
+      if (alt) best = alt;
+    }
+    const gb = (n) => n == null ? "unknown" : `${(n / 1024 ** 3).toFixed(1)} GB`;
+    return { ok: true, dir: best.dir, existing: false, freeBytes: best.free, reason: `No existing install found. Recommended folder has ${gb(best.free)} free.` };
   }
 
   _mkUpdater() {
@@ -87,6 +147,16 @@ export class LauncherCore extends EventEmitter {
     return n;
   }
 
+  /** Append to <userData>/launcher.log (no secrets) so problems can be diagnosed. */
+  log(msg) {
+    try {
+      const f = path.join(this.userData, "launcher.log");
+      try { if (fs.statSync(f).size > 512 * 1024) fs.renameSync(f, f + ".old"); } catch { /* none */ }
+      fs.mkdirSync(this.userData, { recursive: true });
+      fs.appendFileSync(f, `${new Date().toISOString()} [${this.platform}] ${msg}\n`);
+    } catch { /* logging must never break the launcher */ }
+  }
+
   // ---- update check ----
   async refresh() {
     if (this.phase === "updating" || this.phase === "playing") return this.update;
@@ -119,6 +189,7 @@ export class LauncherCore extends EventEmitter {
       return { ok: true, ...r };
     } catch (err) {
       this.phase = "idle";
+      if (!err.cancelled) this.log(`update failed: ${err.code || ""} ${err.stack || err.message}`);
       this.error = err.cancelled ? null : (err.message || "Update failed.");
       await this.refresh();
       if (!err.cancelled) this.error = err.message || "Update failed.";
@@ -159,6 +230,6 @@ export class LauncherCore extends EventEmitter {
       this.emit("game", { running: true, kind });
       this._emitState();
       return { ok: true, kind, closeLauncher: this.settings.get().closeOnPlay };
-    } catch (err) { return fail(err.message); }
+    } catch (err) { this.log(`launch failed: ${err.stack || err.message}`); return fail(err.message); }
   }
 }

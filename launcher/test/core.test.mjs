@@ -28,7 +28,7 @@ test("config: env overrides and file source", () => {
   const c = loadConfig({ LAUNCHER_RELEASE_URL: "http://r/", LAUNCHER_API_URL: "http://a/", LAUNCHER_SERVER_URL: "ws://s" });
   assert.equal(c.releaseBaseUrl, "http://r"); assert.equal(c.apiBaseUrl, "http://a"); assert.equal(c.gameServerUrl, "ws://s");
   assert.match(loadConfig({ LAUNCHER_FILE_SOURCE: "/tmp/x" }).releaseBaseUrl, /^file:\/\/\/tmp\/x$/);
-  assert.equal(loadConfig({}).launcherUpdate.enabled, false);
+  assert.equal(loadConfig({}).launcherUpdate.enabled, true); assert.match(loadConfig({}).launcherUpdate.url, /^https:\/\/dl\.swordandseal\.com\/launcher\/feed$/);
 });
 
 const exited = (core) => new Promise((res) => { const f = (g) => { if (!g.running) { core.off("game", f); res(g); } }; core.on("game", f); });
@@ -129,4 +129,11 @@ test("core: remember-me stores only the name; logout clears the session", async 
     w.core.logout(); assert.equal(w.core.session, null);
     assert.equal((await w.core.play()).error, "Sign in first.");
   } finally { await w.close(); }
+});
+
+test("news: optional tag, banner and summary survive normalization and are length-capped", () => {
+  const [a] = normalizeNews([{ id: "x", title: "T", date: "2026-10-28", body: "b", tag: "Guide", banner: "scroll", summary: "s".repeat(500) }]);
+  assert.equal(a.tag, "Guide"); assert.equal(a.banner, "scroll"); assert.equal(a.summary.length, 300);
+  const [b] = normalizeNews([{ id: "y", title: "No extras" }]);
+  assert.equal(b.tag, ""); assert.equal(b.banner, ""); assert.equal(b.summary, "");
 });
