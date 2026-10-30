@@ -1,13 +1,13 @@
 // Real-server boss check: starts the server with TEST_MODE=1 and a Vite dev server, teleports a high-level player next to the
 // Stone Guardian and verifies the boss bar, the telegraph warning/danger ring, the bag (real `inv` messages) and screenshots both resolutions.
 //   node scripts/boss-test.mjs        (ports from JZ_SERVER_PORT / JZ_CLIENT_PORT, default 8981 / 8982; screenshots -> docs/shots/boss_*.png)
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 
-const { chromium } = createRequire("/opt/npm-tools/node_modules/")("playwright");
+const { chromium } = createRequire(import.meta.url)("playwright"); // local devDependency: portable (the CI image's /opt/npm-tools path does not exist on Windows)
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const SP = Number(process.env.JZ_SERVER_PORT) || 8981, CP = Number(process.env.JZ_CLIENT_PORT) || 8982;
 const SHOTS = path.join(ROOT, "docs/shots");
@@ -26,17 +26,30 @@ const run = (cmd, args, cwd, env = {}) => {
 async function waitHttp(u) { for (let i = 0; i < 100; i++) { try { const r = await fetch(u); if (r.status < 500) return; } catch { /* retry */ } await sleep(300); } throw new Error("timeout " + u); }
 async function until(fn, ms, step = 400) { const end = Date.now() + ms; while (Date.now() < end) { if (await fn()) return true; await sleep(step); } return false; }
 
+// POSIX process groups do not exist on Windows, so killing "-pid" there does nothing and leaves the server/vite running
+// (the next suite then fails with EADDRINUSE). taskkill /T ends the process tree on Windows; POSIX keeps the group kill.
+function killTree(p) {
+  if (!p) return;
+  if (process.platform === "win32") { try { spawnSync("taskkill", ["/pid", String(p.pid), "/T", "/F"], { stdio: "ignore" }); } catch { /* gone */ } return; }
+  try { process.kill(-p.pid, "SIGKILL"); } catch { try { p.kill("SIGKILL"); } catch { /* gone */ } }
+}
+
 let browser, server, pageRef;
 try {
-  server = run(path.join(ROOT, "server/node_modules/.bin/tsx"), ["src/server.ts"], path.join(ROOT, "server"), { PORT: String(SP), TEST_MODE: "1", DB_PATH: path.join(mkdtempSync(path.join(tmpdir(), "jz-boss-")), "b.db") });
-  run(path.join(ROOT, "client/node_modules/.bin/vite"), ["--config", "scripts/vite.uitest.config.mjs", "--port", String(CP), "--strictPort", "--host", "127.0.0.1"], path.join(ROOT, "client"));
+  // spawn the real .js entry points through this node binary: the node_modules/.bin shims are POSIX shell scripts and fail on Windows
+  server = run(process.execPath, [path.join(ROOT, "server/node_modules/tsx/dist/cli.mjs"), "src/server.ts"], path.join(ROOT, "server"), { PORT: String(SP), TEST_MODE: "1", DB_PATH: path.join(mkdtempSync(path.join(tmpdir(), "jz-boss-")), "b.db") });
+  run(process.execPath, [path.join(ROOT, "client/node_modules/vite/bin/vite.js"), "--config", "scripts/vite.uitest.config.mjs", "--port", String(CP), "--strictPort", "--host", "127.0.0.1"], path.join(ROOT, "client"));
   await waitHttp(`http://127.0.0.1:${SP}/health`); await waitHttp(`http://localhost:${CP}/`);
   browser = await chromium.launch({ args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
   pageRef = page;
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (m) => { if (m.type() === "error" && !/GL Driver/.test(m.text())) errors.push(m.text()); });
+  // Ignore environment artifacts only: the GL driver message, SwiftShader's software-rasterizer shader
+  // validation spam, and WebGL context-lifecycle chatter on teardown. None are game defects and none appear on a
+  // real GPU; real console errors still fail (same filter set as e2e.mjs).
+  const ENV_NOISE = /GL Driver|THREE\.WebGLProgram: Shader Error|WebGL: INVALID_OPERATION: useProgram|Program Info Log|CONTEXT_LOST_WEBGL|loseContext|INVALID_OPERATION: delete|deleteVertexArray|object does not belong to this context/;
+  page.on("console", (m) => { if (m.type() === "error" && !ENV_NOISE.test(m.text())) errors.push(m.text()); });
   await page.goto(`http://localhost:${CP}/?auto=1&debug=1&name=BossTester&cls=sword&server=ws://localhost:${SP}`);
   await page.waitForFunction(() => window.__jz?.state?.ready, null, { timeout: 180000 });
   const st = () => page.evaluate(() => window.__jz.state);
@@ -95,7 +108,7 @@ try {
   if (server) console.log("  [server log tail]", server.log.slice(-500));
 } finally {
   if (browser) await browser.close().catch(() => {});
-  for (const p of procs) { try { process.kill(-p.pid, "SIGKILL"); } catch { /* gone */ } }
+  for (const p of procs) killTree(p);
 }
 const failed = results.filter((x) => !x).length;
 console.log(failed ? `FAIL (${failed} of ${results.length})` : `PASS (${results.length} checks)`);

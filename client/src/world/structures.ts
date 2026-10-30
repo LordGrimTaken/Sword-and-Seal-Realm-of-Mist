@@ -1,4 +1,4 @@
-// Architecture of Cloudmist Valley: paifang, pagoda, bridge, lanterns, ruined shrine.
+// Architecture of Cloudmist Valley: paifang, pagoda, bridge, lanterns, ruined shrine, boss-arena landmarks.
 import * as THREE from "three";
 import { Batch } from "./batch";
 import { box, cone, cyl, Local, localVC, roofGeom, roofTexture, sph } from "./geo";
@@ -25,6 +25,8 @@ const C = {
   redGlow: hex(PAL.vermilion, PAL.gold, 0.22),
   moss: hex(PAL.jade, PAL.paperDark, 0.35),
   mossD: hex(PAL.jade, PAL.inkSoft, 0.45),
+  inkPool: hex(PAL.ink, PAL.jade, 0.22),
+  inkRipple: hex(PAL.mistLight, PAL.ink, 0.32),
 };
 export const COLORS = C;
 
@@ -429,6 +431,173 @@ function shrine(b: Batch, lanterns: THREE.Vector3[], group: THREE.Group, smokes:
   }
 }
 
+// ---------------- 0.5.0 boss-arena landmarks ----------------
+// The two newer bosses fight in bare hollows. These landmarks dress those arenas in the valley's ink-wash language and go
+// through the shared Batch, so they merge into the existing batch_* meshes: ZERO extra draw calls. The merged structure
+// meshes are always in view, so the pieces stay deliberately low-poly (a few hundred triangles per cluster).
+
+/** Ground height under a point authored in a Local's x/z, relative to the Local origin's y. */
+function groundIn(L: Local, lx: number, lz: number): number {
+  const c = Math.cos(L.yaw), s = Math.sin(L.yaw);
+  return terrainHeight(L.ox + lx * c + lz * s, L.oz - lx * s + lz * c) - L.oy;
+}
+
+/** Broken shrine column: ground-seated footing, leaning shaft, snapped top (or a capped standing column), optional moss. */
+function ruinPillar(L: Local, lx: number, lz: number, h: number, tilt: number, cap: boolean, mossy = false) {
+  const g = groundIn(L, lx, lz);
+  L.add(box(1.15, 0.5, 1.15), "solid", { p: [lx, g + 0.25, lz] }, C.stoneD);
+  L.add(cyl(0.4, 0.48, h, 6), "solid", { p: [lx + tilt * 0.4, g + 0.5 + h / 2, lz], r: [tilt, 0, tilt * 0.8] }, C.stoneL, true);
+  if (cap) L.add(box(1.2, 0.3, 1.2), "solid", { p: [lx + tilt * 0.8, g + 0.5 + h + 0.1, lz], r: [tilt, 0.35, tilt * 0.8] }, C.stone, true);
+  else L.add(box(0.66, 0.28, 0.42), "solid", { p: [lx + tilt * 0.8 + 0.12, g + 0.5 + h + 0.08, lz], r: [0.24, 0.5, 0.22] }, C.stoneL);
+  if (mossy) L.add(cyl(0.42, 0.42, 0.07, 6), "solid", { p: [lx + tilt * 0.4, g + 0.5 + h - 0.06, lz] }, C.moss);
+}
+
+/** A ward-stamp carved into a facing surface: dark recessed square with incised seal lines (local +z is the facing side). */
+function sealStamp(L: Local, x: number, y: number, z: number, s: number, red = true) {
+  L.add(box(0.56 * s, 0.56 * s, 0.08), "solid", { p: [x, y, z] }, C.darker);
+  L.add(box(0.4 * s, 0.07, 0.08), "solid", { p: [x, y, z + 0.05] }, red ? C.redGlow : C.gold);
+  L.add(box(0.07, 0.4 * s, 0.08), "solid", { p: [x, y, z + 0.05] }, red ? C.redGlow : C.gold);
+}
+
+function drownedShrine(b: Batch) {
+  // A desecrated shrine half-sunk into the south side of the Hollow Hierophant's arena (-72,-72), facing north across the
+  // fight floor: sunken hall platform, four broken columns, a collapsed roof, half-drowned steps down into a dark ink
+  // pool, a fallen stone mask and a fallen stele. The arena's inner 8 units stay clear (the nearest piece is the ink
+  // pool's near rim, 8.2 from the spawn and just outside the 7.5 stomp circle) and the eastern approach from the plaza
+  // stays open; the whole ruin sits inside the world bounds.
+  const X = -72, Z = -90;
+  const L = new Local(b, X, terrainHeight(X, Z), Z, 0.06);
+  // sunken hall platform: the lowest course is already under the ground
+  L.add(box(9.0, 1.0, 5.0), "solid", { p: [0, 0.25, 0] }, C.stoneD, true);
+  L.add(box(8.2, 0.3, 4.6), "solid", { p: [0, 0.72, 0] }, C.stone, true);
+  // toppled back wall: a leaning stub and a fallen course
+  L.add(box(6.6, 2.4, 0.5), "solid", { p: [-0.4, 1.45, -2.2], r: [0.05, 0, 0.07] }, C.wall, true);
+  L.add(box(2.6, 1.0, 0.5), "solid", { p: [3.1, 0.55, -2.5], r: [0.1, 0.25, 0.45] }, C.wall);
+  // columns: one still capped, the rest snapped at different heights
+  ruinPillar(L, -3.2, -1.2, 4.3, 0.03, true);
+  ruinPillar(L, 3.1, -1.3, 2.2, -0.05, false);
+  ruinPillar(L, -3.0, 1.3, 1.1, 0.12, false);
+  ruinPillar(L, 3.3, 1.2, 3.0, -0.02, false, true);
+  // collapsed roof over the back of the hall
+  L.add(roofGeom(3.4, 2.8, 1.1, 0.8, false, 5, 4), "roof", { p: [0.6, 1.08, -1.15], r: [0.16, 0.35, 0.22] }, C.tileWorn, true);
+  // half-sunk steps: each course lower than the last, the final ones under the ink
+  const steps: Array<[number, number, number, number]> = [[2.95, 6.4, 0.6, 0.55], [3.62, 5.6, 0.5, 0.42], [4.29, 4.8, 0.4, 0.28], [4.96, 4.0, 0.32, 0.15], [5.6, 3.4, 0.26, 0.05]];
+  for (const [lz, w, h, top] of steps) L.add(box(w, h, 0.85), "solid", { p: [0, top - h / 2, lz] }, C.stoneD, top > 0.4);
+  // the ink pool: a dark still surface held by a broken stone rim
+  const pool = { x: 0.4, z: 6.0, r: 3.0 }, wy = 0.12;
+  L.add(new THREE.CircleGeometry(pool.r, 18), "solid", { p: [pool.x, wy, pool.z], r: [-Math.PI / 2, 0, 0] }, C.inkPool);
+  L.add(new THREE.RingGeometry(1.65, 1.78, 14), "solid", { p: [pool.x, wy + 0.012, pool.z], r: [-Math.PI / 2, 0, 0] }, C.inkRipple);
+  for (let i = 0; i < 15; i++) {
+    const a = (i / 15) * Math.PI * 2;
+    if (Math.abs(a - Math.PI) < 0.5) continue; // the drowned steps enter the pool on the shrine side
+    const rx = pool.x + Math.sin(a) * (pool.r + 0.4), rz = pool.z + Math.cos(a) * (pool.r + 0.4);
+    L.add(box(1.5 + (i % 3) * 0.2, 0.55, 0.85), "solid", { p: [rx, groundIn(L, rx, rz) + 0.22, rz], r: [0.06, a, 0.05] }, i % 2 ? C.stoneD : C.stone);
+  }
+  // two half-drowned pillars rising out of the ink
+  L.add(cyl(0.34, 0.42, 1.5, 6), "solid", { p: [pool.x - 1.1, wy + 0.65, pool.z + 0.5], r: [0.14, 0, 0.06] }, C.stoneL, true);
+  L.add(cyl(0.3, 0.38, 1.0, 6), "solid", { p: [pool.x + 1.25, wy + 0.45, pool.z - 0.3], r: [-0.1, 0, 0.12] }, C.stone);
+  // the fallen mask at the pool's east rim: a shallow carved stone face, one eye cracked in vermilion
+  const mx = 3.9, mz = 3.5, mg = groundIn(L, mx, mz);
+  L.add(box(2.0, 0.3, 2.4), "solid", { p: [mx, mg + 0.14, mz] }, C.stoneL, true);
+  L.add(box(1.3, 0.26, 0.6), "solid", { p: [mx, mg + 0.15, mz + 1.25] }, C.stoneL);
+  for (const sx of [-1, 1]) {
+    L.add(box(0.5, 0.07, 0.3), "solid", { p: [mx + sx * 0.45, mg + 0.31, mz - 0.25] }, C.dark);
+    L.add(box(0.55, 0.22, 0.6), "solid", { p: [mx + sx * 1.15, mg + 0.13, mz + 0.1] }, C.stoneL);
+  }
+  L.add(box(0.22, 0.14, 0.55), "solid", { p: [mx, mg + 0.34, mz + 0.25] }, C.stoneD);
+  L.add(box(0.6, 0.07, 0.14), "solid", { p: [mx, mg + 0.31, mz + 0.75] }, C.dark);
+  L.add(box(0.07, 0.05, 0.95), "solid", { p: [mx + 0.5, mg + 0.33, mz - 0.6], r: [0, 0.3, 0] }, C.redGlow);
+  // the fallen stele, carved face up
+  const stx = -3.9, stz = 3.4, stg = groundIn(L, stx, stz);
+  L.add(box(1.6, 0.32, 3.2), "solid", { p: [stx, stg + 0.17, stz] }, C.stone, true);
+  for (const bx of [-0.4, 0, 0.4]) L.add(box(0.09, 0.035, 1.9), "solid", { p: [stx + bx, stg + 0.35, stz + 0.1] }, C.gold);
+  L.add(box(0.34, 0.045, 0.34), "solid", { p: [stx, stg + 0.35, stz + 1.15] }, C.redGlow);
+  // a toppled cold lantern by the hall's west corner
+  const lx2 = -5.0, lz2 = 2.2, lg = groundIn(L, lx2, lz2);
+  L.add(box(0.75, 0.4, 0.75), "solid", { p: [lx2, lg + 0.2, lz2] }, C.stoneD);
+  L.add(cyl(0.13, 0.15, 0.95, 6), "solid", { p: [lx2 + 0.75, lg + 0.15, lz2], r: [0, 0, Math.PI / 2] }, C.stone);
+  L.add(box(0.5, 0.4, 0.5), "solid", { p: [lx2 + 1.4, lg + 0.2, lz2] }, C.stoneD);
+  L.add(box(0.78, 0.16, 0.78), "solid", { p: [lx2 + 1.4, lg + 0.48, lz2], r: [0, 0, 0.08] }, C.stone);
+  // two snapped column stumps flanking the hall
+  for (const [sx2, sz2, sh] of [[-6.0, 0.4, 1.3], [5.6, 0.6, 0.9]] as Array<[number, number, number]>) {
+    const g = groundIn(L, sx2, sz2);
+    L.add(cyl(0.34, 0.46, sh, 6), "solid", { p: [sx2, g + sh / 2, sz2], r: [0.05, 0, 0.08] }, C.stoneL, true);
+    L.add(box(0.6, 0.22, 0.38), "solid", { p: [sx2 + 0.15, g + sh + 0.06, sz2], r: [0.3, 0.6, 0.15] }, C.stone);
+  }
+  // rubble and moss
+  for (const [rx2, rz2, sz2, seed] of [[5.8, 5.6, 0.9, 31], [-6.2, 5.0, 1.0, 47]] as Array<[number, number, number, number]>) {
+    localVC(L, rockChunk(seed, sz2 * 1.2, sz2 * 0.7, sz2, { moss: 0.6, cuts: 5, detail: 1 }), "solid", { p: [rx2, groundIn(L, rx2, rz2) + sz2 * 0.12, rz2], r: [0, seed, 0] });
+  }
+  L.add(cyl(0.7, 0.8, 0.06, 6), "solid", { p: [-2.6, 0.84, -0.6] }, C.moss);
+  L.add(cyl(0.55, 0.62, 0.06, 6), "solid", { p: [2.1, 0.84, 1.5] }, C.moss);
+  L.add(cyl(0.5, 0.58, 0.06, 6), "solid", { p: [-4.9, groundIn(L, -4.9, 2.4) + 0.05, 2.4] }, C.moss);
+}
+
+function wardenStone(L: Local, sx: number, sz: number, inward: number, i: number) {
+  const S = new Local(L.b, L.ox + sx, L.oy + groundIn(L, sx, sz), L.oz + sz, inward);
+  const h = 2.4 + (i % 3) * 0.55;
+  const tilt = (((i * 5) % 7) - 3) * 0.014;
+  S.add(box(1.7 + (i % 2) * 0.2, 0.55, 1.25), "solid", { p: [0, 0.18, 0] }, C.stoneD);
+  S.add(cyl(0.52, 0.76, h, 6), "solid", { p: [0, 0.45 + h / 2, 0], r: [tilt, 0, tilt * 0.7] }, i % 2 ? C.stone : C.stoneL, true);
+  S.add(box(0.95, 0.3, 0.95), "solid", { p: [0, 0.45 + h + 0.12, 0], r: [tilt, 0.3, tilt] }, C.stone);
+  sealStamp(S, 0, 1.55 + (h - 2.4) * 0.4, 0.64, 0.9, i % 2 === 0);
+  if (i % 3 === 0) S.add(cyl(0.5, 0.62, 0.09, 6), "solid", { p: [0, 0.52, 0] }, C.moss);
+}
+
+function brokenWardStone(b: Batch) {
+  // the snapped ward-stone inside the ring, south-east of the spawn: its seal still faces the arena centre
+  const X = 66, Z = -66;
+  const S = new Local(b, X, terrainHeight(X, Z), Z, -Math.PI / 4);
+  S.add(box(2.7, 0.65, 2.3), "solid", { p: [0, 0.2, 0] }, C.stoneD, true);
+  S.add(box(1.35, 1.85, 0.95), "solid", { p: [0, 1.25, 0], r: [0.04, 0, 0.07] }, C.stone, true);
+  S.add(box(1.25, 0.85, 0.9), "solid", { p: [1.75, groundIn(S, 1.75, 1.15) + 0.42, 1.15], r: [0.2, 0.65, 0.28] }, C.stoneL, true);
+  S.add(box(0.5, 0.4, 0.42), "solid", { p: [-1.2, groundIn(S, -1.2, 1.35) + 0.18, 1.35], r: [0.28, 0.9, 0.35] }, C.stone);
+  // the great seal on the face that looks into the ring
+  S.add(box(1.0, 1.15, 0.07), "solid", { p: [0, 1.45, 0.5] }, C.darker);
+  for (const sy of [-0.56, 0.56]) S.add(box(1.1, 0.07, 0.08), "solid", { p: [0, 1.45 + sy, 0.55] }, C.gold);
+  for (const sx of [-0.52, 0.52]) S.add(box(0.07, 1.15, 0.08), "solid", { p: [sx, 1.45, 0.55] }, C.gold);
+  S.add(box(0.5, 0.06, 0.08), "solid", { p: [0, 1.45, 0.58] }, C.redGlow);
+  S.add(box(0.06, 0.5, 0.08), "solid", { p: [0, 1.45, 0.58] }, C.redGlow);
+  S.add(box(0.18, 0.18, 0.09), "solid", { p: [0, 1.45, 0.6] }, C.gold);
+  // a cracked ward line of flat stones around the base
+  for (let i = 0; i < 7; i++) {
+    if (i === 3) continue; // break in the line
+    const a = (i / 7) * Math.PI * 2 + 0.3;
+    const rx = Math.sin(a) * 3.2, rz = Math.cos(a) * 3.2;
+    S.add(box(1.0, 0.16, 0.5), "solid", { p: [rx, groundIn(S, rx, rz) + 0.07, rz], r: [0, a + 0.3, 0.03] }, i % 2 ? C.stoneD : C.stone);
+  }
+  S.add(cyl(0.6, 0.72, 0.07, 6), "solid", { p: [-0.9, groundIn(S, -0.9, -0.9) + 0.04, -0.9] }, C.moss);
+}
+
+function wardenStones(b: Batch) {
+  // A broken ring of seal-stamped warden stones around the Mist Warden's arena (60,-60): weathered monoliths with carved
+  // ward-stamps facing inward, low threshold stones at the western approach gap from the plaza, and a snapped ward-stone
+  // inside the ring. The monoliths sit at r >= 12 from the spawn; the only pieces closer are the flat 0.2-high stones of
+  // the broken ward line (5+ from the spawn, still outside the 3-unit wander core), so the fight floor and the approach
+  // stay clear, and the whole ring is inside the world bounds.
+  const X = 60, Z = -60;
+  const L = new Local(b, X, terrainHeight(X, Z), Z, 0);
+  const N = 8;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    if (i === 5 || i === 6) continue; // approach gap towards the plaza (west-south-west)
+    const r = 12.4 + ((i * 37) % 5) * 0.28;
+    wardenStone(L, Math.sin(a) * r, Math.cos(a) * r, a + Math.PI, i);
+  }
+  // low threshold stones flank the gap without blocking it
+  for (const a of [(5 / N) * Math.PI * 2, (6 / N) * Math.PI * 2]) {
+    const sx = Math.sin(a) * 12.4, sz = Math.cos(a) * 12.4;
+    L.add(box(1.9, 0.55, 1.1), "solid", { p: [sx, groundIn(L, sx, sz) + 0.22, sz], r: [0.05, a + 0.25, 0.04] }, C.stoneD, true);
+  }
+  brokenWardStone(b);
+  // fallen stones and moss between the ring and the hollow
+  for (const [rx, rz, sz2, seed] of [[-5.6, 14.6, 0.9, 71], [11.4, 9.0, 0.8, 83]] as Array<[number, number, number, number]>) {
+    localVC(L, rockChunk(seed, sz2 * 1.2, sz2 * 0.7, sz2, { moss: 0.65, cuts: 5, detail: 1 }), "solid", { p: [rx, groundIn(L, rx, rz) + sz2 * 0.12, rz], r: [0, seed, 0] });
+  }
+  L.add(cyl(0.62, 0.72, 0.07, 6), "solid", { p: [13.6, groundIn(L, 13.6, -3.2) + 0.05, -3.2] }, C.moss);
+  L.add(cyl(0.5, 0.58, 0.06, 6), "solid", { p: [-12.8, groundIn(L, -12.8, -4.4) + 0.05, -4.4] }, C.moss);
+}
+
 // ---------------- plaza decor ----------------
 function plazaDecor(b: Batch, smokes: THREE.Vector3[]) {
   const y = terrainHeight(0, -80);
@@ -487,6 +656,8 @@ export function buildStructures(): StructureOut {
   pathLanterns(b, lanterns);
   bridge(b, lanterns);
   shrine(b, lanterns, group, smokes, rays);
+  drownedShrine(b);
+  wardenStones(b);
   plazaDecor(b, smokes);
   poiMarkers(b, lanterns);
   b.build(group, structureMaterials(), 0.06);

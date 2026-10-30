@@ -53,7 +53,7 @@ class Bot {
 let child: ChildProcess | undefined, tmp = "";
 async function startServer() {
   tmp = mkdtempSync(join(tmpdir(), "jiuzhou-tele-"));
-  child = spawn(join(ROOT, "node_modules/.bin/tsx"), ["src/server.ts"], { cwd: ROOT, env: { ...process.env, PORT: String(PORT), DB_PATH: join(tmp, "t.db"), NODE_NO_WARNINGS: "1", TEST_MODE: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+  child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], { cwd: ROOT, env: { ...process.env, PORT: String(PORT), DB_PATH: join(tmp, "t.db"), NODE_NO_WARNINGS: "1", TEST_MODE: "1" }, stdio: ["ignore", "pipe", "pipe"] });
   child.stderr!.on("data", (d) => process.stderr.write(`[server!] ${d}`));
   for (let i = 0; i < 100; i++) { try { if ((await fetch(`http://127.0.0.1:${PORT}/health`)).ok) return; } catch { /* not up */ } await sleep(100); }
   throw new Error("server did not start");
@@ -104,8 +104,13 @@ async function mobCase(label: string, type: "fox_spirit" | "bamboo_spirit", at: 
   if (second) {
     const t2 = b.teles[n0], e2 = t2.e;
     const perp = expect.shape === "line" ? [Math.cos(e2.dir ?? 0), -Math.sin(e2.dir ?? 0)] : [-Math.sin(e2.dir ?? 0), -Math.cos(e2.dir ?? 0)]; // strafe sideways for a line, back off for a cone
-    await b.run(perp[0], perp[1], 420);
-    await sleep(900);
+    // Walk out, re-sending input at a tight cadence until the latest snapshot puts us clear. A fixed 420 ms burst loses
+    // the race on a loaded suite: the server drops stale inputs after a fraction of a second, so a stalled loop leaves
+    // the bot standing inside the shape and the swing lands. Keep feeding input until we are actually outside.
+    const outBy = Date.now() + 2000;
+    while (Date.now() < outBy && telegraphContains(e2, b.me.x, b.me.z)) { b.move(perp[0], perp[1]); await sleep(50); }
+    b.move(0, 0);
+    await sleep(700);
     const outside = !telegraphContains(e2, b.me.x, b.me.z);
     const hurt = b.dmg.slice(d0).filter((d) => d.src === m0.id && d.t >= t2.t && d.t <= t2.t + 1200);
     check("dodging out of the shape before it lands avoids the hit", outside && hurt.length === 0, `outside=${outside} hits=${hurt.length}`);

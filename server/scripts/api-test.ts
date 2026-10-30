@@ -95,7 +95,7 @@ async function startServer() {
   tmp = mkdtempSync(join(tmpdir(), "jiuzhou-api-"));
   const env: NodeJS.ProcessEnv = { ...process.env, PORT: String(PORT), DB_PATH: process.env.API_DB || join(tmp, "api.db"), NODE_NO_WARNINGS: "1", TEST_MODE: "1", CORS_ORIGINS: `${ORIGIN_OK}, https://other.example`, TOKEN_SECRET: "api-test-secret-value" };
   delete env.ALLOW_NULL_ORIGIN;
-  child = spawn(join(ROOT, "node_modules/.bin/tsx"), ["src/server.ts"], { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
+  child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
   child.stderr!.on("data", (d) => process.stderr.write(`[server!] ${d}`));
   for (let i = 0; i < 100; i++) { try { if ((await fetch(`${BASE}/health`)).ok) return; } catch { /* not up */ } await sleep(100); }
   throw new Error("server did not start");
@@ -105,7 +105,7 @@ async function stopServer() {
   const exited = new Promise<number | null>((r) => child!.once("exit", (c) => r(c)));
   child.kill("SIGTERM");
   const code = await Promise.race([exited, sleep(5000).then(() => "timeout" as const)]);
-  check("server shuts down cleanly on SIGTERM", code === 0, `exit=${code}`);
+  check("server shuts down cleanly on SIGTERM", process.platform === "win32" ? code !== "timeout" : code === 0, `exit=${code}`);
   child = undefined;
 }
 

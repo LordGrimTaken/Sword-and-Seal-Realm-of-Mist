@@ -43,6 +43,8 @@ export interface Player extends Base {
   qi: number; mqi: number; qiResumeAt: number; qiMsgAt: number;                  // 0.4.0 jade Qi pool
   gear: GearStats; cx?: ContentState; potionReady: number;                        // 0.4.0 content: summed equipment bonuses, content state, shared potion cooldown
   dodgeReady: number; dashUntil: number; dashLeft: number; dashDx: number; dashDz: number; invulnUntil: number; // 0.4.0 dodge roll
+  mounted: boolean; // 0.5.0 spirit-sword mount: faster authoritative movement (see MOUNT.speedMult in world.ts) + EntityState.mounted
+  partyId?: number; // 0.5.0 session-only party membership: id of the Party in PartyManager (party.ts); absent = solo
 }
 
 export interface Mob extends Base {
@@ -50,10 +52,12 @@ export interface Mob extends Base {
   ai: "idle" | "chase" | "return" | "dead";
   threat: Map<number, number>; target: number;
   nextAttack: number; attackUntil: number; slowUntil: number; slowMult: number;
+  burnUntil: number; burnNext: number; burnDmg: number; burnSrc: number; burnEvery: number; // damage over time from player skills (e.g. Fire Talisman)
   wanderX: number; wanderZ: number; wanderAt: number;
   deadAt: number; respawnAt: number;
   windupUntil: number; windupTarget: number; windupX: number; windupZ: number; // Jade Serpent lunge: frozen until windupUntil, then dashes at windupTarget
   packCalled?: boolean;   // 0.4.0: this mob already called its pack for the current fight
+  summonedBy?: number;    // 0.5.0: id of the boss that summoned this add (undefined for ordinary spawns); summons never respawn and are cleared when the boss dies or leashes
   swing?: SwingState;     // regular-mob telegraphed swing in progress (fox cone / bamboo line)
   boss?: BossState;
 }
@@ -65,6 +69,7 @@ export interface PendingSlam { at: number; x: number; z: number; radius: number;
 export interface BossState {
   engagedAt: number;      // sim time combat began (0 = not engaged)
   nextSlam: number; patternIdx: number; rr: number; // round-robin target index
+  nextSummon: number;     // 0.5.0 summon-adds mechanic: sim time of the next summon wave (0 = no summon timer)
   phase2: boolean; enraged: boolean;
   phase3: boolean; beam?: BeamState;   // phase 3 (<25% HP): cracked open, rotating rune beam
   pending: PendingSlam[];

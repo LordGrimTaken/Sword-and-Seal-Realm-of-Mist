@@ -843,7 +843,7 @@ export function createVfx(scene: THREE.Scene): {
     try { castInner(skill, cls, from, to); } finally { fxBudget.prio = true; }
   }
   function castInner(skill: number, cls: ClassId, from: THREE.Vector3, to: THREE.Vector3) {
-    if (cls === "sword") swordCast(skill, from, to);
+    if (cls === "sword" || cls === "blade") swordCast(skill, from, to);
     else if (cls === "talisman") { extras.bagua(from, fxBudget.prio); talismanCast(skill, from, to); }
     else physicianCast(skill, from, to);
   }

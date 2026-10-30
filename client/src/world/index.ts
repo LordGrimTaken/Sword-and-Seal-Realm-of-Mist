@@ -1,6 +1,7 @@
-// JIUZHOU world: Cloudmist Valley
+﻿// JIUZHOU world: Cloudmist Valley
 import * as THREE from "three";
 import { buildAmbient } from "./ambient";
+import { buildWeather } from "./weather";
 import { buildGround } from "./ground";
 import { buildMountains, buildSky, HORIZON, SUN_DIR } from "./sky";
 import { buildStructures } from "./structures";
@@ -46,7 +47,8 @@ export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): 
   const cranes = buildCranes();
   const koi = buildKoi();
   const ambient = buildAmbient(structures.lanterns, { smokes: structures.smokes, rays: structures.rays });
-  root.add(terrain, buildGround(), structures.group, veg.group, water.mesh, koi.mesh, ambient.group, cranes.mesh);
+  const weather = buildWeather();
+  root.add(terrain, buildGround(), structures.group, veg.group, water.mesh, koi.mesh, ambient.group, cranes.mesh, weather.group);
 
   const dayNight = createDayNight({
     scene, hemi, sun, sky, mountains: mountains.group,
@@ -108,7 +110,9 @@ export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): 
       mountains.update(time);
       water.update(time);
       renderer.getDrawingBufferSize(size);
-      ambient.update(time, camPos, size.y);
+      weather.update(time, dt, camPos, dayNight.tone);
+      ambient.update(time, camPos, size.y, weather.mist);
     },
   };
 }
+

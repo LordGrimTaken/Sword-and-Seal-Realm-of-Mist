@@ -9,10 +9,29 @@ export const WORLD_SIZE = 200;        // zone is a square, x/z in [-100, 100]
 export const PLAYER_SPEED = 6;        // world units / second
 export const INTEREST_RADIUS = 60;    // only entities within this radius are sent
 
-export type ClassId = "sword" | "talisman" | "physician";
+export type ClassId = "sword" | "talisman" | "physician" | "blade";
 // sword      Sword Cultivator — melee, high damage, short range
 // talisman   Talisman Master  — ranged, elemental talisman bolts, AoE
 // physician  Physician        — support, heals self/allies, weak damage
+// blade      Blade Dancer     — fast crit melee skirmisher, whirlwind bursts
+
+// ---------- Cultivation realms (0.5.0) ----------
+/** A named cultivation stage gated by level. `hpBonus` is the flat max-HP bonus a character has once the realm is
+ *  reached (0 for the starting realm), so crossing a boundary is a "breakthrough" worth announcing. */
+export interface RealmDef { name: string; minLv: number; hpBonus: number }
+export const REALMS: RealmDef[] = [
+  { name: "Qi Condensation", minLv: 1, hpBonus: 0 },
+  { name: "Foundation Establishment", minLv: 5, hpBonus: 20 },
+  { name: "Core Formation", minLv: 10, hpBonus: 40 },
+  { name: "Nascent Soul", minLv: 15, hpBonus: 60 },
+  { name: "Spirit Severing", minLv: 20, hpBonus: 80 },
+];
+/** The realm a character of `lv` belongs to. Clamped: below the first realm gives the first, above the last the last. */
+export function realmForLevel(lv: number): RealmDef {
+  let realm = REALMS[0];
+  for (const r of REALMS) if (lv >= r.minLv) realm = r;
+  return realm;
+}
 
 export type EntityKind = "player" | "mob" | "npc";
 
@@ -29,11 +48,32 @@ export interface EntityState {
   cls?: ClassId;    // players only
   mob?: MobType;    // mobs only
   st?: "idle" | "move" | "attack" | "dead"; // animation hint
+  burning?: boolean; // 0.4.0 additive: mob is taking burn damage over time (Fire Talisman); the client shows a flame cue while true
   ttl?: string;     // 0.4.0 additive: active title of a player (shown under the nameplate)
+  mounted?: boolean; // 0.5.0 additive: players only - riding the spirit-sword mount (client draws the jian + trail and raises the avatar)
+  // 0.5.0 additive: veil bosses (the Hollow Bride) only - true while she is in the VEILED phase (immune, lashing from behind
+  // the veil). Readability/status flag for the client model + tint only: the immunity itself is enforced server-side in the
+  // boss state machine and is NEVER inferred from this field. Absent (undefined) for every other mob.
+  veiled?: boolean;
 }
 
+/** One party member as the party panel needs them: identity, class, level and the live HP bar (hp/mhp rounded). */
+export interface PartyMemberView { name: string; cls: ClassId; lv: number; hp: number; mhp: number }
+
+/** One treasure cache as the client needs it: stable numeric id, fixed world position and whether it can be opened now. */
+export interface ChestStateView { id: number; x: number; z: number; ready: boolean }
+
+/** One item offered in a trade. `name` + `qty` is the authoritative reference; `slot` is the current bag index for display only. */
+export interface TradeItemView { slot: number; name: string; qty: number; zh?: string }
+/** One side of a trade as that side's player sees it: the offered items, the coin offer and that side's ready flag. */
+export interface TradeSideView { items: TradeItemView[]; coin: number; ready: boolean }
+/** Full trade state for one player: the peer's name, their own side and the peer's side. Both sides get the symmetric view. */
+export interface TradeStateView { peer: string; mine: TradeSideView; theirs: TradeSideView }
+
 export type MobType = "bamboo_spirit" | "fox_spirit" | "stone_guardian" | "jade_serpent" // jade_serpent: pond/bridge mob
-  | "lotus_toad" | "stone_hound" | "old_whisker"; // 0.4.0 content: passive spitting toad, pack-hunting hound, named rare fox
+  | "lotus_toad" | "stone_hound" | "old_whisker" | "ink_wisp" | "mist_warden" | "thorn_sprite" // 0.4.0 content: passive spitting toad, pack-hunting hound, named rare fox; ink_wisp: floating spirit; mist_warden: second boss; thorn_sprite: passive thorn-spitting sprite
+  | "hollow_hierophant" // 0.5.0 content: third boss, a hollow summoner that calls Thorn Sprites out of the reeds
+  | "hollow_bride"; // 0.5.0 content: fourth boss, a ceremonial wraith that alternates VEILED (immune) and REVEALED (vulnerable)
 
 export interface SkillDef {
   id: number;       // 1..4 hotbar slot
@@ -58,7 +98,21 @@ export type ClientMsg =
   | { t: "equip"; item: string } | { t: "unequip"; slot: string } | { t: "use"; item: string }
   | { t: "npc"; npc: string; a: "talk" | "accept" | "turnin"; q?: string }
   | { t: "craft"; id: string } | { t: "buy"; item: string; qty?: number } | { t: "sell"; item: string; qty?: number }
-  | { t: "title"; id: string };
+  | { t: "title"; id: string }
+  // 0.5.0 additive (still v3): toggle the spirit-sword mount (flying jian). The server validates the state (not dead), flips
+  // `Player.mounted`, applies the mount speed multiplier to authoritative movement and echoes the flag in EntityState.mounted.
+  | { t: "mount" }
+  // 0.5.0 additive (still v3), session-only party (up to PARTY_MAX players): invite by name, then accept/decline/leave.
+  // The same actions are also reachable through the chat commands /invite <name>, /accept, /decline and /leave.
+  | { t: "party"; a: "invite" | "accept" | "decline" | "leave"; name?: string }
+  // 0.5.0 additive (still v3), treasure caches: open the cache with this id. The server validates range/readiness and answers
+  // with an updated `chests` state plus the normal loot/coin/system path.
+  | { t: "openchest"; id: number }
+  // 0.5.0 additive (still v3), player-to-player trading. request/accept/decline drive the session; offer changes the caller's
+  // side only (slot = index into the caller's current bag list, qty = units of that stack, coin = coins offered; qty 0 rejects
+  // or removes the named item offer); ready toggles the caller's confirmation. Every field is validated server-side and an
+  // offer is only a REFERENCE — nothing leaves a bag until both sides confirm. /trade <name>, /trade accept|decline|cancel also work.
+  | { t: "trade"; a: "request" | "accept" | "decline" | "offer" | "ready" | "cancel"; name?: string; slot?: number; qty?: number; coin?: number };
 
 // ---------- Server -> Client ----------
 export type ServerMsg =
@@ -76,7 +130,31 @@ export type ServerMsg =
   | { t: "npcdlg"; npc: string; name: string; role: string; lines: string[]; quests: SideQuestView[]; craft?: CraftView[]; buy?: BuyView[]; sell?: SellView[] }
   | { t: "sq"; quests: SideQuestView[] }                    // the player's accepted/finished side quests (journal)
   | { t: "prog"; ach: AchView[]; pts: number; title: string | null; titles: string[]; pois: PoiView[] } // merit seals, titles, discovered places
-  | { t: "toast"; kind: "poi" | "ach" | "title" | "item" | "quest"; title: string; text: string };
+  | { t: "toast"; kind: "poi" | "ach" | "title" | "item" | "quest"; title: string; text: string }
+  // 0.5.0 bestiary / codex (additive, still v3): the player's persisted kill count for every mob type, in data order.
+  // 0 means never slain (the client shows the entry as undiscovered). Sent after login and again whenever a count changes.
+  | { t: "best"; mobs: Array<{ type: MobType; kills: number }> }
+  // 0.5.0 world event, additive (still v3): the Mist Surge window. Sent to a player on every state change (start/end) and once
+  // after login (with the remaining time). active = a surge is running now; endsIn = whole seconds left (0 when inactive).
+  | { t: "surge"; active: boolean; endsIn: number }
+  // 0.5.0 world event #2, additive (still v3): the Lantern Tide window (same semantics/shape as `surge`, different event).
+  // Sent on every state change (start/end) and once after login; endsIn = whole seconds left in the active tide (0 when inactive).
+  | { t: "tide"; active: boolean; endsIn: number }
+  // 0.5.0 world event #3, additive (still v3): the Market Day window (same semantics/shape as `surge`/`tide`). While it is
+  // active, Peddler Hao's shop transactions use shifted transaction prices (he buys for more, sells for less) but the SHOP
+  // data itself is unchanged. Sent on every state change (start/end) and once after login; endsIn = whole seconds left.
+  | { t: "market"; active: boolean; endsIn: number }
+  // 0.5.0 party, additive (still v3): the current group state, sent to every member on any change and once after login.
+  // members = null means the player is solo. `leader` is the leader's display name; `inviteFrom` is present only while a
+  // solo player has a pending invitation (so the panel can show the accept/decline prompt). Session-only, never persisted.
+  | { t: "party"; members: PartyMemberView[] | null; leader?: string; inviteFrom?: string }
+  // 0.5.0 treasure caches, additive (still v3): every fixed cache with its session state, sent after login and whenever one
+  // opens or respawns. Small and fixed (6 entries), so it stays out of the entity/snapshot/interest path entirely.
+  | { t: "chests"; chests: ChestStateView[] }
+  // 0.5.0 player trading, additive (still v3): the full two-sided trade state, sent to BOTH traders on every change and once
+  // after login (state null = not trading). `invitedBy` is present only for the player a waiting request is addressed to, so
+  // the client can show the accept/decline prompt. Session-only; items stay in the bags until the atomic swap.
+  | { t: "trade"; state: TradeStateView | null; invitedBy?: string };
 
 export interface DailyTask {
   id: string; title: string; desc: string;
@@ -149,7 +227,7 @@ export interface GearStats { atk: number; hp: number; crit: number; def: number 
 export interface ItemInfo {
   name: string;
   kind: "gear" | "consumable" | "material" | "quest";
-  slot?: GearSlot; rarity?: Rarity; lv?: number; cls?: ClassId; stats?: Partial<GearStats>;
+  slot?: GearSlot; rarity?: Rarity; lv?: number; cls?: ClassId; stats?: Partial<GearStats>; set?: string;
   text: string;    // flavour or use description
   sell?: number;   // coin the peddler pays (absent = cannot be sold)
 }

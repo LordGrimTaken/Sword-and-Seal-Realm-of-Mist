@@ -1,10 +1,10 @@
 // 0.4.0 content systems on top of the world: equipment and consumables, NPC side-quest chains, Artisan Tao's crafting, Peddler Hao's trade,
 // places of interest, merit seals and titles. Server-authoritative: the client only asks (`equip`, `npc`, `craft`, ...) and renders what it is told
 // (`items`, `gear`, `npcdlg`, `sq`, `prog`, `toast`). State lives in `p.cx` (loaded at login) and is written through to ContentDb on every change.
-import type { AchView, BuyView, ClientMsg, CraftView, GearSlot, PoiView, QuestObjView, ServerMsg, SellView, SideQuestView } from "../../../shared/protocol.ts";
+import type { AchView, BuyView, ClientMsg, CraftView, GearSlot, MobType, PoiView, QuestObjView, ServerMsg, SellView, SideQuestView } from "../../../shared/protocol.ts";
 import {
-  ACHIEVEMENTS, ACH_BY_ID, ALL_TITLES, CONSUMABLE_BY_NAME, GEAR_BY_NAME, GEAR_SLOTS, INV, NPCS, NPC_KEY_BY_NAME, NPC_SVC, POIS, POTION_CD, QUESTS, RECIPES, RECIPE_BY_ID,
-  SHOP, SIDE_QUESTS, SIDE_QUEST_BY_ID, itemCatalogue, maxHpFor, recipeOutput, sellPrice, type SideQuestDef,
+  ACHIEVEMENTS, ACH_BY_ID, ALL_TITLES, CONSUMABLE_BY_NAME, GEAR, GEAR_BY_NAME, GEAR_SETS, GEAR_SET_OF, GEAR_SLOTS, INV, MOBS, NPCS, NPC_KEY_BY_NAME, NPC_SVC, POIS, POTION_CD, QUESTS, RECIPES, RECIPE_BY_ID,
+  SHOP, SIDE_QUESTS, SIDE_QUEST_BY_ID, itemCatalogue, lanternTideAt, marketBuyMult, marketSellMult, maxHpFor, recipeOutput, sellPrice, type SideQuestDef,
 } from "../data.ts";
 import { ContentDb } from "../contentdb.ts";
 import { ecoAddCoin, ecoAddJade, ecoSpendCoin, ecoSpendJade, ecoWalletOf, contentHooks } from "../economy.ts";
@@ -20,6 +20,39 @@ const str = (v: unknown, max = 64): v is string => typeof v === "string" && v.le
 const send = (p: Player, m: ServerMsg) => p.send(JSON.stringify(m));
 const ITEMS_JSON = JSON.stringify({ t: "items", items: itemCatalogue() } satisfies ServerMsg);
 
+// ---------------------------------------------------------------- merit-seal counters (0.6.0)
+/** Merit seals may only reference counters the server really produces. Some goals (bestiary coverage, all bosses,
+ *  full gear sets) cannot be expressed with any pre-0.6.0 counter, so this module adds two kinds of support:
+ *
+ *  - DERIVED counters - computed in memory only by `recount()`, NEVER written to the ContentDb counter store and
+ *    never incremented anywhere else; they are rebuilt from persisted state on every login, so no schema change is
+ *    involved: `bestTypes` (number of `best:<mob>` entries > 0), `bosses` (number of `kill:<boss>` entries > 0),
+ *    `set:<setId>` (worn pieces of a set, from the saved equipment map) and `setsDone` (complete sets worn).
+ *  - `tideKills` - a NORMAL incrementing counter like `kill:<mob>` (bumped in `onKill` only while the deterministic
+ *    Lantern Tide window is active, persisted by the usual `bump()` path, so it survives a relog).
+ *
+ *  Both kinds ride on the existing kill/equip paths in this file: no new gameplay hooks were added, and nothing is
+ *  written outside the counters a relog can rebuild. `isAchievementCounter()` (exported) is the content test's
+ *  registry so an `ACHIEVEMENTS` entry can never point at a counter the server cannot produce. */
+const TALK_KEYS = ["elder", "mei", "fen", "wu", "tao", "hao"];
+const BOSS_TYPES = (Object.keys(MOBS) as MobType[]).filter((type) => !!MOBS[type].boss);
+/** Distinct slots a set spans = the most pieces of it one character can wear at once (a set is "complete" at that count). */
+const SET_SLOT_COUNT = new Map(GEAR_SETS.map((s) => [s.id, new Set(GEAR.filter((g) => GEAR_SET_OF[g.name] === s.id).map((g) => g.slot)).size] as const));
+/** Single-number counters that are not `prefix:name` shaped; every one is produced by the content/economy/quest systems. */
+const PLAIN_COUNTERS = new Set(["kills", "lv", "poi", "chain", "quest", "craft", "equipped", "rare", "talked", "bestTypes", "bosses", "setsDone", "tideKills"]);
+
+/** True when `key` is a counter the content/economy/quest systems actually produce. Exported for the data checks,
+ *  so `ACHIEVEMENTS` entries can never reference a counter the server cannot produce. */
+export function isAchievementCounter(key: string): boolean {
+  if (PLAIN_COUNTERS.has(key)) return true;
+  const mob = /^(?:kill|best):(.+)$/.exec(key);
+  if (mob) return Object.prototype.hasOwnProperty.call(MOBS, mob[1]);
+  const set = /^set:(.+)$/.exec(key);
+  if (set) return GEAR_SETS.some((s) => s.id === set[1]);
+  const talk = /^(?:talk|greet):(.+)$/.exec(key);
+  return !!talk && TALK_KEYS.includes(talk[1]);
+}
+
 // ---------------------------------------------------------------- pure helpers (exported for tests)
 /** Can the pack take all of `adds`? (new stacks need free slots, existing stacks need room under the stack cap) */
 export function canHold(inv: ReadonlyMap<string, { qty: number }>, adds: Array<{ item: string; qty: number }>): boolean {
@@ -34,6 +67,15 @@ export function canHold(inv: ReadonlyMap<string, { qty: number }>, adds: Array<{
   return inv.size + fresh <= INV.maxSlots;
 }
 export const maxHpOf = (p: Player) => maxHpFor(p.cls, p.lv) + p.gear.hp;
+
+// ---------------------------------------------------------------- shop pricing (0.5.0 Market Day)
+// The static SHOP table and `sellPrice()` stay the single source of truth (the content checks and the "no coin loop"
+// invariants read them unchanged). Market Day only reshapes the price of a transaction at the moment it happens, with a
+// whole-coin rounding and a floor of 1 coin, applied identically to the shop dialog quotes and the actual debit/payout.
+/** What Peddler Hao charges for one item costing `base` at sim time `time` (25% off while the market is open). */
+export const shopBuyPrice = (base: number, time: number) => Math.max(1, Math.round(base * marketBuyMult(time)));
+/** What Peddler Hao pays for one item worth `base` at sim time `time` (50% more while the market is open). */
+export const shopSellPrice = (base: number, time: number) => Math.max(1, Math.round(base * marketSellMult(time)));
 
 export class Content {
   constructor(readonly db: ContentDb) {}
@@ -65,6 +107,7 @@ export class Content {
     this.sendGear(p); this.sendSq(p);
     this.evalAll(w, p, true);
     this.sendProg(p);
+    this.sendBest(p);
   }
 
   private count(p: Player, key: string) { return p.cx?.counters.get(key) ?? 0; }
@@ -75,13 +118,39 @@ export class Content {
     try { this.db.setCounter(p.n, key, val); } catch { /* best effort */ }
     return true;
   }
-  /** Derived counters: slots filled, rare+ pieces worn, distinct people spoken to. */
+  /** Derived counters. The first three are the original 0.4.0 behaviour, unchanged. The 0.6.0 additions are DERIVED
+   *  (they exist only in the in-memory map; they are never written to the DB and are rebuilt here at login):
+   *  `bestTypes`/`bosses` from the persisted `best:`/`kill:` counters, and `set:<setId>`/`setsDone` from the saved
+   *  equipment map. Everything is recomputed from state that is already persisted, so nothing new is stored. */
   private recount(cx: ContentState) {
     cx.counters.set("equipped", cx.equipped.size);
     let rare = 0;
     for (const it of cx.equipped.values()) { const r = GEAR_BY_NAME.get(it)?.rarity; if (r === "rare" || r === "epic") rare++; }
     cx.counters.set("rare", rare);
-    cx.counters.set("talked", ["elder", "mei", "fen", "wu", "tao", "hao"].filter((k) => cx.counters.get(`talk:${k}`)).length);
+    cx.counters.set("talked", TALK_KEYS.filter((k) => cx.counters.get(`talk:${k}`)).length);
+    cx.counters.set("bestTypes", this.bestTypesOf(cx));
+    cx.counters.set("bosses", this.bossesOf(cx));
+    let setsDone = 0;
+    for (const s of GEAR_SETS) {
+      const worn = [...cx.equipped.values()].filter((it) => GEAR_SET_OF[it] === s.id).length;
+      cx.counters.set(`set:${s.id}`, worn);
+      if (worn > 0 && worn === (SET_SLOT_COUNT.get(s.id) ?? 0)) setsDone++;
+    }
+    cx.counters.set("setsDone", setsDone);
+  }
+  private bestTypesOf(cx: ContentState) { return (Object.keys(MOBS) as MobType[]).filter((t) => (cx.counters.get(`best:${t}`) ?? 0) > 0).length; }
+  private bossesOf(cx: ContentState) { return BOSS_TYPES.filter((t) => (cx.counters.get(`kill:${t}`) ?? 0) > 0).length; }
+  /** Refresh one DERIVED counter in the in-memory map (no DB write) and evaluate its seals when it changed. */
+  private setDerived(w: World, p: Player, key: string, val: number) {
+    const cx = p.cx!;
+    if ((cx.counters.get(key) ?? 0) === val) return;
+    cx.counters.set(key, val);
+    this.evalKey(w, p, key);
+  }
+  /** Evaluate the gear-derived seals after an equipment change (`recount` has already refreshed set:<id>/setsDone). */
+  private evalGearDerived(w: World, p: Player) {
+    for (const s of GEAR_SETS) this.evalKey(w, p, `set:${s.id}`);
+    this.evalKey(w, p, "setsDone");
   }
   private bump(w: World, p: Player, key: string, by = 1) {
     if (!p.cx) return;
@@ -137,6 +206,15 @@ export class Content {
     send(p, { t: "prog", ach, pts, title: cx.title || null, titles: ALL_TITLES.filter((t) => cx.titles.has(t)), pois });
   }
 
+  /** 0.5.0 bestiary: every mob type with the player's persisted kill count (`best:<mobType>` counters). Counts are
+   *  written through the generic ContentDb counter store, so they survive a relog with no schema change. */
+  sendBest(p: Player) {
+    const cx = p.cx;
+    if (!cx) return;
+    const mobs = (Object.keys(MOBS) as MobType[]).map((type) => ({ type, kills: cx.counters.get(`best:${type}`) ?? 0 }));
+    send(p, { t: "best", mobs });
+  }
+
   // ---------------------------------------------------------------- places of interest + periodic upkeep (every 0.5 s per player)
   tick(w: World, p: Player) {
     const cx = p.cx;
@@ -163,6 +241,15 @@ export class Content {
     if (m.def.rare && this.announced.get(m) !== m.deadAt) { this.announced.set(m, m.deadAt); w.sysAll(`${m.def.name} has been defeated!`); }
     this.bump(w, p, "kills");
     this.bump(w, p, `kill:${m.def.type}`);
+    // 0.5.0 bestiary: persisted per-type kill count; refresh the client whenever the entry changes.
+    const best = `best:${m.def.type}`;
+    if (this.setCounter(p, best, this.count(p, best) + 1)) this.sendBest(p);
+    // 0.6.0 merit seals: `bestTypes`/`bosses` are DERIVED counters refreshed here from the counters just bumped
+    // (in-memory only; rebuilt by recount() at login, so no DB write/row of their own). `tideKills` is a normal
+    // persisted counter, bumped only while the deterministic Lantern Tide window is active.
+    this.setDerived(w, p, "bestTypes", this.bestTypesOf(p.cx));
+    this.setDerived(w, p, "bosses", this.bossesOf(p.cx));
+    if (lanternTideAt(w.time).active) this.bump(w, p, "tideKills");
     this.advance(w, p, (o) => o.kind === "kill" && o.target === m.def.type, 1);
   }
   private announced = new WeakMap<Mob, number>();
@@ -220,6 +307,7 @@ export class Content {
     w.sysTo(p, `Equipped ${item}.`);
     this.setCounter(p, "equipped", cx.counters.get("equipped") ?? 0); this.setCounter(p, "rare", cx.counters.get("rare") ?? 0);
     this.evalKey(w, p, "equipped"); this.evalKey(w, p, "rare");
+    this.evalGearDerived(w, p); // 0.6.0: worn-set counters + complete-set seals (derived, no DB write)
   }
   unequip(w: World, p: Player, slot: unknown) {
     const cx = p.cx;
@@ -246,12 +334,17 @@ export class Content {
     if (invQty(p, item) < 1) return w.sysTo(p, `You do not have ${item}.`);
     if (w.time < p.potionReady) return w.sysTo(p, `Potions are on cooldown (${Math.ceil(p.potionReady - w.time)} s).`);
     const poisoned = p.poisonUntil > 0;
-    if (p.hp >= p.mhp && !(c.cure && poisoned)) return w.sysTo(p, "You are already at full health.");
+    const wantHeal = c.healPct > 0 && (p.hp < p.mhp || (c.cure && poisoned));
+    const wantQi = !!c.qiRestore && p.qi < p.mqi;
+    if (!wantHeal && !wantQi) return w.sysTo(p, c.qiRestore ? "Your Qi is already full." : "You are already at full health.");
     removeItem(w, p, item, 1);
     p.potionReady = w.time + POTION_CD;
     if (c.cure && poisoned) { p.poisonUntil = 0; w.sysTo(p, "The poison is gone."); }
-    const real = Math.min(Math.round(p.mhp * c.healPct), p.mhp - p.hp);
-    if (real > 0) { p.hp += real; w.emitNear(p.x, p.z, { k: "heal", src: p.id, dst: p.id, amount: real }); }
+    if (c.healPct > 0) {
+      const real = Math.min(Math.round(p.mhp * c.healPct), p.mhp - p.hp);
+      if (real > 0) { p.hp += real; w.emitNear(p.x, p.z, { k: "heal", src: p.id, dst: p.id, amount: real }); }
+    }
+    if (c.qiRestore) { p.qi = Math.min(p.mqi, p.qi + c.qiRestore); }
     w.sysTo(p, `You used ${item}.`);
   }
 
@@ -385,12 +478,16 @@ export class Content {
   private craftViews(p: Player): CraftView[] {
     return RECIPES.map((r) => ({ id: r.id, out: recipeOutput(r, p.cls), qty: r.qty, mats: r.mats, coin: r.coin, jade: r.jade, lv: r.lv }));
   }
-  private sellViews(p: Player): SellView[] {
+  private sellViews(w: World, p: Player): SellView[] {
     const out: SellView[] = [];
-    for (const it of p.inv.values()) { const price = sellPrice(it.item); if (price > 0) out.push({ item: it.item, price }); }
+    for (const it of p.inv.values()) {
+      const base = sellPrice(it.item);
+      const price = base > 0 ? shopSellPrice(base, w.time) : 0;
+      if (price > 0) out.push({ item: it.item, price });
+    }
     return out;
   }
-  sendDialog(_w: World, p: Player, key: string, fresh: boolean) {
+  sendDialog(w: World, p: Player, key: string, fresh: boolean) {
     const svc = this.svcNpc(key);
     if (!svc || !p.cx) return;
     const quests: SideQuestView[] = [];
@@ -400,7 +497,7 @@ export class Content {
     const lines = fresh ? [svc.greet[n % svc.greet.length]] : [];
     const msg: Extract<ServerMsg, { t: "npcdlg" }> = { t: "npcdlg", npc: key, name: svc.name, role: svc.role, lines, quests };
     if (key === "tao") msg.craft = this.craftViews(p);
-    if (key === "hao") { msg.buy = SHOP.map((s): BuyView => ({ item: s.item, price: s.price })); msg.sell = this.sellViews(p); }
+    if (key === "hao") { msg.buy = SHOP.map((s): BuyView => ({ item: s.item, price: shopBuyPrice(s.price, w.time) })); msg.sell = this.sellViews(w, p); }
     send(p, msg);
   }
   craft(w: World, p: Player, id: unknown) {
@@ -435,23 +532,27 @@ export class Content {
     if (!this.near(p, "hao")) return w.sysTo(p, "Peddler Hao is too far away.");
     const n = typeof qty === "number" && Number.isInteger(qty) ? Math.max(1, Math.min(20, qty)) : 1;
     if (!canHold(p.inv, [{ item, qty: n }])) return w.sysTo(p, "Your pack is full; make room first.");
-    if (!ecoSpendCoin(w, p, s.price * n)) return w.sysTo(p, `You need ${s.price * n} coin.`);
+    const unit = shopBuyPrice(s.price, w.time); // 0.5.0 Market Day: only the transaction price shifts, SHOP itself is untouched
+    const cost = unit * n;
+    if (!ecoSpendCoin(w, p, cost)) return w.sysTo(p, `You need ${cost} coin.`);
     addItem(w, p, item, "", n);
-    w.sysTo(p, `Bought ${n > 1 ? `${n} x ` : ""}${item} for ${s.price * n} coin.`);
+    w.sysTo(p, `Bought ${n > 1 ? `${n} x ` : ""}${item} for ${cost} coin.`);
     this.sendDialog(w, p, "hao", false);
   }
   sell(w: World, p: Player, item: unknown, qty: unknown) {
     if (!p.cx || !str(item)) return;
-    const price = sellPrice(item);
-    if (price <= 0 || p.st === "dead") return w.sysTo(p, "Peddler Hao will not buy that.");
+    const base = sellPrice(item);
+    if (base <= 0 || p.st === "dead") return w.sysTo(p, "Peddler Hao will not buy that.");
     if (!this.near(p, "hao")) return w.sysTo(p, "Peddler Hao is too far away.");
     const have = invQty(p, item);
     const n = typeof qty === "number" && Number.isInteger(qty) ? Math.max(1, Math.min(99, qty)) : 1;
     if (have < 1) return;
     const k = Math.min(n, have);
+    const unit = shopSellPrice(base, w.time); // 0.5.0 Market Day: the vendor pays more only while the market is open
+    const payout = unit * k;
     removeItem(w, p, item, k);
-    ecoAddCoin(w, p, price * k);
-    w.sysTo(p, `Sold ${k > 1 ? `${k} x ` : ""}${item} for ${price * k} coin.`);
+    ecoAddCoin(w, p, payout);
+    w.sysTo(p, `Sold ${k > 1 ? `${k} x ` : ""}${item} for ${payout} coin.`);
     this.sendDialog(w, p, "hao", false);
     this.sendSq(p);
   }

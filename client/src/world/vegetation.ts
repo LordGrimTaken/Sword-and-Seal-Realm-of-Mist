@@ -280,6 +280,60 @@ function scatter(mesh: THREE.InstancedMesh, pts: { x: number; z: number; s: numb
   mesh.frustumCulled = false;
 }
 
+/** one instance of a scattered set: world XZ, uniform scale, yaw, optional height scale / lift / tilt / tint */
+export interface ScatterPoint { x: number; z: number; s: number; ry: number; sy?: number; dy?: number; tilt?: number; col?: THREE.Color }
+
+/**
+ * Draw-call-bounded spatial chunking for big instanced sets. ONE InstancedMesh has ONE bounding sphere over all of its
+ * instances, so a single mesh covering the valley can never be frustum-culled: every camera draws the whole set. Split
+ * the same instances into a few world-space cells, each its own InstancedMesh, so each patch frustum-culls on its own.
+ * Geometry, material, per-instance transforms and colours are unchanged (only the partitioning is new), so the look is
+ * identical. The cell size coarsens until the set fits `maxChunks`, which bounds the extra draw calls.
+ * `place(p, index, mesh)` writes one instance transform (+ optional instance colour).
+ */
+export function scatterSpatial(
+  group: THREE.Group, geo: THREE.BufferGeometry, mat: THREE.Material, pts: ScatterPoint[],
+  place: (p: ScatterPoint, i: number, mesh: THREE.InstancedMesh) => void,
+  maxChunks: number, name?: string, baseCell = 46,
+): THREE.InstancedMesh[] {
+  const cellsOf = (cell: number) => {
+    const cells = new Map<string, ScatterPoint[]>();
+    for (const p of pts) {
+      const k = Math.floor(p.x / cell) + "," + Math.floor(p.z / cell);
+      const a = cells.get(k);
+      if (a) a.push(p); else cells.set(k, [p]);
+    }
+    return [...cells.values()];
+  };
+  let cell = baseCell, lists = cellsOf(cell);
+  while (lists.length > maxChunks && cell < 400) { cell *= 1.5; lists = cellsOf(cell); }
+  const out: THREE.InstancedMesh[] = [];
+  for (const list of lists) {
+    const mesh = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach((p, i) => place(p, i, mesh));
+    mesh.count = list.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    if (name) mesh.name = name;
+    group.add(mesh);
+    out.push(mesh);
+  }
+  return out;
+}
+
+/** scatter() into a few frustum-cullable chunks; vegetation sits on the terrain, so each instance matches scatter(). */
+function scatterChunked(group: THREE.Group, geo: THREE.BufferGeometry, mat: THREE.Material, pts: ScatterPoint[], maxChunks: number, name?: string): void {
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+  scatterSpatial(group, geo, mat, pts, (p, i, mesh) => {
+    e.set(p.tilt ?? 0, p.ry, (p.tilt ?? 0) * 0.7, "YXZ"); q.setFromEuler(e);
+    v.set(p.x, terrainHeight(p.x, p.z) + (p.dy ?? 0), p.z);
+    sc.set(p.s, p.s * (p.sy ?? 1), p.s);
+    m.compose(v, q, sc);
+    mesh.setMatrixAt(i, m);
+    if (p.col) mesh.setColorAt(i, p.col);
+  }, maxChunks, name);
+}
+
 export function buildVegetation(): VegOut {
   const group = new THREE.Group();
   group.name = "vegetation";
@@ -325,10 +379,8 @@ export function buildVegetation(): VegOut {
       `);
   });
   applyWind(bambooMat, { height: 12, amp: 1.25, idle: 0.0 });
-  const bamboo = new THREE.InstancedMesh(bambooGeometry(), bambooMat, bPts.length);
-  scatter(bamboo, bPts);
-  bamboo.name = "bamboo";
-  group.add(bamboo);
+  // ~430 bamboo cover the whole grove plus stray clumps: chunk them so a camera only draws the patches it can see
+  scatterChunked(group, bambooGeometry(), bambooMat, bPts, 6, "bamboo");
 
   // ---- pines (fox hills + shrine hill + rim) ----
   const pPts: { x: number; z: number; s: number; ry: number; sy: number; tilt: number }[] = [];
@@ -343,19 +395,16 @@ export function buildVegetation(): VegOut {
   }
   const pineMat = toonInst();
   applyWind(pineMat, { height: 7, amp: 0.34, idle: 0.35 });
-  const pines = new THREE.InstancedMesh(pineGeometry(), pineMat, pPts.length);
-  scatter(pines, pPts);
-  group.add(pines);
+  // the 54 cloud-pines sit in the fox hills, around the shrine and along the whole rim: chunked so each cluster culls alone
+  scatterChunked(group, pineGeometry(), pineMat, pPts, 6, "pines");
 
   // ---- blossom & ginkgo & maple trees ----
   let treeSeed = 1;
-  const mk = (a: THREE.Color, b: THREE.Color, pts: { x: number; z: number }[], scaleMul = 1, alt?: THREE.Color, altP = 0) => {
+  const mk = (a: THREE.Color, b: THREE.Color, pts: { x: number; z: number }[], scaleMul = 1, alt?: THREE.Color, altP = 0, maxChunks = 3) => {
     const g = treeGeometry(a, b, treeSeed++, alt, altP);
     const lm = leafMat();
     applyWind(lm, { height: 8, amp: 0.3, idle: 0.35 });
-    const m = new THREE.InstancedMesh(g, lm, pts.length);
-    scatter(m, pts.map((p) => ({ x: p.x, z: p.z, s: (0.85 + rnd() * 0.5) * scaleMul, ry: rnd() * 6.28, sy: 1, tilt: 0 })));
-    group.add(m);
+    scatterChunked(group, g, lm, pts.map((p) => ({ x: p.x, z: p.z, s: (0.85 + rnd() * 0.5) * scaleMul, ry: rnd() * 6.28, sy: 1, tilt: 0 })), maxChunks);
   };
   const blossom: { x: number; z: number }[] = [];
   const around = (cx: number, cz: number, rMin: number, rMax: number, n: number, out: { x: number; z: number }[], avoidPath = true) => {
@@ -457,10 +506,8 @@ export function buildVegetation(): VegOut {
           transformed.z += cos(uTime * 1.3 + ph * 1.3) * 0.08 * hh * hh * 1.6;`);
     });
     applyWind(reedMat, { height: 2, amp: 0.55, idle: 0.0 });
-    const reeds = new THREE.InstancedMesh(reedG, reedMat, reedPts.length);
-    scatter(reeds, reedPts.map((p) => ({ ...p, dy: -0.05 })));
-    reeds.name = "reeds";
-    group.add(reeds);
+    // reeds ring the pond: two chunks are enough to cull the far rim when the camera faces away
+    scatterChunked(group, reedG, reedMat, reedPts.map((p) => ({ ...p, dy: -0.05 })), 2, "reeds");
   }
 
   // ---- wildflower clusters ----
@@ -501,10 +548,8 @@ export function buildVegetation(): VegOut {
       const tint = tints[Math.floor(fbm(x * 0.03, z * 0.03, 2) * 9.99) % tints.length];
       fp.push({ x, z, s: 1.25 + rnd() * 0.8, ry: rnd() * 6.28, col: tint.clone().multiplyScalar(0.9 + rnd() * 0.3) });
     }
-    const fm = new THREE.InstancedMesh(fg, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient(), side: THREE.DoubleSide }), fp.length);
-    scatter(fm, fp.map((p) => ({ ...p, dy: 0 })));
-    fm.name = "flowers";
-    group.add(fm);
+    // 280 patchy wildflowers are scattered across the whole valley: chunk so only the patches in view are drawn
+    scatterChunked(group, fg, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient(), side: THREE.DoubleSide }), fp.map((p) => ({ ...p, dy: 0 })), 5, "flowers");
   }
 
   // ---- lotus pond ----

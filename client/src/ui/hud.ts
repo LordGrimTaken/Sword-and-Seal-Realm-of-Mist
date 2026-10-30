@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { realmForLevel } from "@shared/protocol";
 import type { ClassId, EntityState, SkillDef, ZoneInfo } from "@shared/protocol";
 import { CLASS_INFO, esc, plain } from "./glyphs";
 import { icon, skillIcon, itemIcon } from "./icons";
@@ -51,6 +52,18 @@ const SPLASH = `<svg class="splash" viewBox="-60 -40 120 80" aria-hidden="true">
 // mirrors QI in server/src/data.ts
 const DODGE_COST = 15, DODGE_CD = 1.5, DODGE_DIST = 6, DODGE_IFRAMES = 0.25;
 
+// mirrors the Mist Surge announcements in server/src/game/world.ts (the banner keys off the system chat lines)
+const SURGE_START = /^The mist surges! Mobs deal \+(\d+)% damage for (?:another )?(\d+) s\.$/;
+const SURGE_END = /^The mist recedes\./;
+
+// mirrors the Lantern Tide announcements in server/src/game/world.ts (the gold banner keys off these system chat lines)
+const TIDE_START = /^The lantern tide rises! Slain mobs give \+(\d+)% coin and \+(\d+)% XP for (?:another )?(\d+) s\.$/;
+const TIDE_END = /^The lantern tide ebbs\./;
+
+// mirrors the Market Day announcements in server/src/game/world.ts (the paper-red banner keys off these system chat lines)
+const MARKET_START = /^The market day opens! Peddler Hao pays \+(\d+)% for goods and sells at -(\d+)% for (?:another )?(\d+) s\.$/;
+const MARKET_END = /^The market day closes\./;
+
 const $ = <T extends HTMLElement>(root: ParentNode, sel: string) => root.querySelector(sel) as T;
 
 export class Hud {
@@ -87,6 +100,24 @@ export class Hud {
   private prompt!: HTMLElement;
   private toastEl!: HTMLElement;
   private toastTimer = 0;
+  /** 0.5.0 Mist Surge banner + when the current surge ends (performance.now() ms; 0 = no surge). */
+  private surgeEl!: HTMLElement;
+  private surgePct!: HTMLElement;
+  private surgeCd!: HTMLElement;
+  private surgeEndAt = 0;
+  private surgeTxt = "";
+  /** 0.5.0 Lantern Tide gold banner + when the current tide ends (performance.now() ms; 0 = no tide). */
+  private tideEl!: HTMLElement;
+  private tideBonus!: HTMLElement;
+  private tideCd!: HTMLElement;
+  private tideEndAt = 0;
+  private tideTxt = "";
+  /** 0.5.0 Market Day paper-red banner + when the current market closes (performance.now() ms; 0 = no market). */
+  private marketEl!: HTMLElement;
+  private marketBonus!: HTMLElement;
+  private marketCd!: HTMLElement;
+  private marketEndAt = 0;
+  private marketTxt = "";
   private connBtn!: HTMLButtonElement;
   private connTitle!: HTMLElement;
   private bagBtn!: HTMLElement;
@@ -96,8 +127,8 @@ export class Hud {
   // cached nodes
   private pName!: HTMLElement; private pCls!: HTMLElement; private pLv!: HTMLElement;
   private pHp!: HTMLElement; private pHpT!: HTMLElement; private pQi!: HTMLElement; private pQiT!: HTMLElement; private pQiBar!: HTMLElement;
-  private tFrame!: HTMLElement; private tName!: HTMLElement; private tLv!: HTMLElement; private tHp!: HTMLElement; private tHpT!: HTMLElement;
-  private xpI!: HTMLElement; private xpL!: HTMLElement;
+  private tFrame!: HTMLElement; private tName!: HTMLElement; private tLv!: HTMLElement; private tHp!: HTMLElement; private tHpT!: HTMLElement; private tBurn!: HTMLElement;
+  private xpI!: HTMLElement; private xpL!: HTMLElement; private realmEl!: HTMLElement;
   private chatLog!: HTMLElement; private chatIn!: HTMLInputElement;
   private loot!: HTMLElement; private perf!: HTMLElement;
   private zone!: HTMLElement; private lvl!: HTMLElement; private death!: HTMLElement; private deathCd!: HTMLElement;
@@ -118,8 +149,9 @@ export class Hud {
       <div id="tframe" class="panel uf hidden">
         <div class="row"><span class="nm" data-r="tn"></span><span class="lv" data-r="tl"></span></div>
         <div class="bar hp"><i data-r="th"></i><span data-r="tht"></span></div>
+        <div data-r="tb" class="burn" hidden style="margin-top:4px;font-size:10.5px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:#c8552f;text-shadow:0 0 6px rgba(255,120,40,.45)"><span style="display:inline-block;width:11px;height:12px;margin-right:5px;vertical-align:-2px">${icon("fire")}</span>Burning</div>
       </div>
-      <div id="hotbar" class="panel"><div class="slots"></div><div id="xp"><i></i></div><div id="xplabel"></div></div>
+      <div id="hotbar" class="panel"><div class="slots"></div><div id="xp"><i></i></div><div id="xplabel"></div><div id="realm" title="Cultivation realm" style="position:absolute;left:14px;bottom:-1px;transform:translateY(100%);font-size:10px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:var(--gold);background:rgba(26,26,31,.65);padding:0 6px;border-radius:0 0 2px 2px;white-space:nowrap"></div></div>
       <div id="bossbar" class="panel"><div class="bn"></div><div class="bbar"><i></i><b class="mk"></b><b class="mk mk3"></b></div><div class="bt"></div></div>
       <button id="bagbtn" class="panel" type="button" title="Bag (I)" aria-label="Bag"><span class="g">${icon("pouch")}</span><span class="k">I</span><span class="dot"></span></button>
       <button id="boardbtn" class="panel" type="button" title="Notice Board (B)" aria-label="Notice Board"><span class="g">${icon("board")}</span><span class="k">B</span><span class="dot"></span></button>
@@ -143,8 +175,8 @@ export class Hud {
     this.pName = $(r, '[data-r="pn"]'); this.pCls = $(r, '[data-r="pc"]'); this.pLv = $(r, '[data-r="pl"]');
     this.pHp = $(r, '[data-r="ph"]'); this.pHpT = $(r, '[data-r="pht"]'); this.pQi = $(r, '[data-r="pq"]'); this.pQiT = $(r, '[data-r="pqt"]'); this.pQiBar = this.pQi.parentElement as HTMLElement;
     this.tFrame = $(r, "#tframe"); this.tName = $(r, '[data-r="tn"]'); this.tLv = $(r, '[data-r="tl"]');
-    this.tHp = $(r, '[data-r="th"]'); this.tHpT = $(r, '[data-r="tht"]');
-    this.xpI = $(r, "#xp i"); this.xpL = $(r, "#xplabel");
+    this.tHp = $(r, '[data-r="th"]'); this.tHpT = $(r, '[data-r="tht"]'); this.tBurn = $(r, '[data-r="tb"]');
+    this.xpI = $(r, "#xp i"); this.xpL = $(r, "#xplabel"); this.realmEl = $(r, "#realm");
     this.chatLog = $(r, "#chatlog"); this.chatIn = $(r, "#chatin");
     this.loot = $(r, "#loot"); this.perf = $(r, "#perf");
     this.zone = $(r, "#zone"); this.lvl = $(r, "#levelup"); this.death = $(r, "#death"); this.deathCd = $(r, "#death .cd");
@@ -170,6 +202,12 @@ export class Hud {
     });
     this.boardBtn.addEventListener("click", () => { this.board.toggle(); this.boardBtn.blur(); });
     this.tip = $(r, "#tip"); this.buffsEl = $(r, "#buffs"); this.prompt = $(r, "#prompt"); this.toastEl = $(r, "#toast");
+    this.surgeEl = this.buildSurgeBanner();
+    this.root.appendChild(this.surgeEl);
+    this.tideEl = this.buildTideBanner();
+    this.root.appendChild(this.tideEl);
+    this.marketEl = this.buildMarketBanner();
+    this.root.appendChild(this.marketEl);
     this.connBtn = $(r, "#connbtn") as HTMLButtonElement; this.connTitle = $(r, "#conn h3");
     this.quest = new QuestTracker(r, (e) => {
       if (e.kind === "ready") this.quest.stamp("Complete", "Objective complete");
@@ -331,6 +369,135 @@ export class Hud {
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove("show"), ms);
   }
 
+  // ---------- 0.5.0 Mist Surge ----------
+  /** Compact ink-wash strip, top centre: shown only while the repeating Mist Surge event is running. */
+  private buildSurgeBanner(): HTMLElement {
+    const el = document.createElement("div");
+    el.id = "surge";
+    el.setAttribute("role", "status");
+    el.setAttribute("aria-live", "polite");
+    el.style.cssText = [
+      "position:absolute", "left:50%", "top:12px", "transform:translateX(-50%)",
+      "display:none", "align-items:center", "gap:10px",
+      "padding:5px 14px 6px 11px",
+      "background:linear-gradient(180deg, rgba(26,26,31,.92), rgba(26,26,31,.78))",
+      "border-left:3px solid var(--vermilion)", "border-radius:2px",
+      "outline:1px solid rgba(217,205,176,.32)", "outline-offset:-4px",
+      "box-shadow:0 3px 12px rgba(26,26,31,.45)",
+      "pointer-events:none", "z-index:11", "white-space:nowrap",
+    ].join(";");
+    el.innerHTML = `
+      <span style="display:block;width:20px;height:20px;flex:none;color:var(--paper);opacity:.95">${icon("wind")}</span>
+      <span style="font-family:var(--font-display);font-size:16px;line-height:1;letter-spacing:2px;color:var(--paper);text-shadow:0 1px 2px var(--ink)">Mist Surge</span>
+      <span data-r="pct" style="font-size:10.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#e8604f">+20% mob damage</span>
+      <span data-r="cd" style="min-width:42px;text-align:right;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--paper-dark)"></span>`;
+    this.surgePct = el.querySelector('[data-r="pct"]') as HTMLElement;
+    this.surgeCd = el.querySelector('[data-r="cd"]') as HTMLElement;
+    return el;
+  }
+
+  /** Show/hide the banner and (re)start its countdown from the server's remaining seconds. */
+  onSurge(active: boolean, endsIn: number, pct = 20) {
+    if (!active || !(endsIn > 0)) { this.surgeEndAt = 0; this.surgeEl.style.display = "none"; return; }
+    this.surgeEndAt = performance.now() + endsIn * 1000;
+    this.surgePct.textContent = `+${pct}% mob damage`;
+    this.surgeTxt = "";
+    this.surgeEl.style.display = "flex";
+  }
+
+  /** Feed a system chat line to the banner (the world announces start/end there; the protocol has no client handler of its own yet). */
+  private onSurgeLine(text: string) {
+    const start = SURGE_START.exec(text);
+    if (start) { this.onSurge(true, Number(start[2]), Number(start[1])); return; }
+    if (SURGE_END.test(text)) this.onSurge(false, 0);
+  }
+
+  // ---------- 0.5.0 Lantern Tide ----------
+  /** Gold lantern strip, top centre below the mist banner: shown only while the repeating Lantern Tide is running. */
+  private buildTideBanner(): HTMLElement {
+    const el = document.createElement("div");
+    el.id = "tide";
+    el.setAttribute("role", "status");
+    el.setAttribute("aria-live", "polite");
+    el.style.cssText = [
+      "position:absolute", "left:50%", "top:50px", "transform:translateX(-50%)",
+      "display:none", "align-items:center", "gap:10px",
+      "padding:5px 14px 6px 11px",
+      "background:linear-gradient(180deg, rgba(38,32,20,.94), rgba(26,22,14,.84))",
+      "border-left:3px solid var(--gold)", "border-radius:2px",
+      "outline:1px solid rgba(201,162,39,.5)", "outline-offset:-4px",
+      "box-shadow:0 0 16px rgba(201,162,39,.32), 0 3px 12px rgba(26,26,31,.45)",
+      "pointer-events:none", "z-index:11", "white-space:nowrap",
+    ].join(";");
+    el.innerHTML = `
+      <span style="display:block;width:20px;height:20px;flex:none;color:#f0cf5a;opacity:.97">${icon("lantern")}</span>
+      <span style="font-family:var(--font-display);font-size:16px;line-height:1;letter-spacing:2px;color:#f0cf5a;text-shadow:0 0 8px rgba(201,162,39,.55), 0 1px 2px var(--ink)">Lantern Tide</span>
+      <span data-r="bonus" style="font-size:10.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#ffd98a">+50% coin &middot; +25% XP</span>
+      <span data-r="cd" style="min-width:42px;text-align:right;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--paper-dark)"></span>`;
+    this.tideBonus = el.querySelector('[data-r="bonus"]') as HTMLElement;
+    this.tideCd = el.querySelector('[data-r="cd"]') as HTMLElement;
+    return el;
+  }
+
+  /** Show/hide the gold tide banner and (re)start its countdown from the server's remaining seconds. */
+  onTide(active: boolean, endsIn: number, coinPct = 50, xpPct = 25) {
+    if (!active || !(endsIn > 0)) { this.tideEndAt = 0; this.tideEl.style.display = "none"; return; }
+    this.tideEndAt = performance.now() + endsIn * 1000;
+    this.tideBonus.textContent = `+${coinPct}% coin \u00b7 +${xpPct}% XP`;
+    this.tideTxt = "";
+    this.tideEl.style.display = "flex";
+  }
+
+  /** Feed a system chat line to the gold banner (same announcement fallback as the mist banner). */
+  private onTideLine(text: string) {
+    const start = TIDE_START.exec(text);
+    if (start) { this.onTide(true, Number(start[3]), Number(start[1]), Number(start[2])); return; }
+    if (TIDE_END.test(text)) this.onTide(false, 0);
+  }
+
+  // ---------- 0.5.0 Market Day ----------
+  /** Paper-red merchant strip, top centre below the two event banners: shown only while the market is open. */
+  private buildMarketBanner(): HTMLElement {
+    const el = document.createElement("div");
+    el.id = "market";
+    el.setAttribute("role", "status");
+    el.setAttribute("aria-live", "polite");
+    el.style.cssText = [
+      "position:absolute", "left:50%", "top:88px", "transform:translateX(-50%)",
+      "display:none", "align-items:center", "gap:10px",
+      "padding:5px 14px 6px 11px",
+      "background:linear-gradient(180deg, rgba(242,234,216,.97), rgba(226,206,180,.94))",
+      "border-left:3px solid var(--vermilion)", "border-radius:2px",
+      "outline:1px solid rgba(200,55,45,.45)", "outline-offset:-4px",
+      "box-shadow:0 3px 12px rgba(26,26,31,.4), 0 0 14px rgba(200,55,45,.16)",
+      "pointer-events:none", "z-index:11", "white-space:nowrap",
+    ].join(";");
+    el.innerHTML = `
+      <span style="display:block;width:20px;height:20px;flex:none;opacity:.95">${icon("coin")}</span>
+      <span style="font-family:var(--font-display);font-size:16px;line-height:1;letter-spacing:2px;color:#8e2620;text-shadow:0 1px 0 rgba(255,255,255,.5)">Market Day</span>
+      <span data-r="bonus" style="font-size:10.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--vermilion)">+50% sell &middot; -25% buy</span>
+      <span data-r="cd" style="min-width:42px;text-align:right;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;color:#5c4a38"></span>`;
+    this.marketBonus = el.querySelector('[data-r="bonus"]') as HTMLElement;
+    this.marketCd = el.querySelector('[data-r="cd"]') as HTMLElement;
+    return el;
+  }
+
+  /** Show/hide the paper-red market banner and (re)start its countdown from the server's remaining seconds. */
+  onMarket(active: boolean, endsIn: number, sellPct = 50, buyPct = 25) {
+    if (!active || !(endsIn > 0)) { this.marketEndAt = 0; this.marketEl.style.display = "none"; return; }
+    this.marketEndAt = performance.now() + endsIn * 1000;
+    this.marketBonus.textContent = `+${sellPct}% sell \u00b7 -${buyPct}% buy`;
+    this.marketTxt = "";
+    this.marketEl.style.display = "flex";
+  }
+
+  /** Feed a system chat line to the paper-red banner (same announcement fallback as the other two events). */
+  private onMarketLine(text: string) {
+    const start = MARKET_START.exec(text);
+    if (start) { this.onMarket(true, Number(start[3]), Number(start[1]), Number(start[2])); return; }
+    if (MARKET_END.test(text)) this.onMarket(false, 0);
+  }
+
   startCooldown(slot: number, ms: number) {
     const s = this.slots.find((x) => x.slot === slot);
     if (!s) return;
@@ -383,6 +550,7 @@ export class Hud {
   chatState() { return { tab: this.chatTab, unread: { ...this.unread }, lines: this.chatLog.children.length, visible: [...this.chatLog.children].filter((c) => (c as HTMLElement).offsetParent !== null).length }; }
 
   addChat(from: string, text: string, sys: boolean, mine: boolean) {
+    if (sys) { this.onSurgeLine(text); this.onTideLine(text); this.onMarketLine(text); } // 0.5.0: the world-event banners listen for the start/end announcements
     const ln = document.createElement("div");
     ln.className = "ln" + (sys ? " sys" : "") + (mine ? " me" : "");
     const d = new Date();
@@ -435,6 +603,10 @@ export class Hud {
     this.xpI.style.transform = `scaleX(${f})`;
     this.xpI.parentElement?.classList.toggle("max", maxed);
     this.xpL.textContent = maxed ? `Lv ${lv} · MAX` : `Lv ${lv} · ${xp} / ${next} XP`;
+    // 0.5.0: the cultivation realm sits next to the level/XP readout; it changes on a breakthrough (levels 5/10/15/20).
+    const realm = realmForLevel(lv);
+    this.realmEl.textContent = realm.name;
+    this.realmEl.title = `Cultivation realm: ${realm.name} (+${realm.hpBonus} max HP)`;
   }
 
   xpState() { return { text: this.xpL.textContent ?? "", max: !!this.xpI.parentElement?.classList.contains("max"), fill: parseFloat((this.xpI.style.transform.match(/scaleX\(([^)]*)\)/) ?? [])[1] ?? "0") || 0 }; }
@@ -487,6 +659,7 @@ export class Hud {
     for (const f of this.floats) f.el.remove();
     this.floats = [];
     this.lastTargetId = -1;
+    this.tBurn.hidden = true;
     this.deathAt = -1;
     this.qi = this.mqi = 100; this.qiShown = -1;
     this.bag.reset();
@@ -495,6 +668,8 @@ export class Hud {
     this.board.reset();
     this.boss.classList.remove("show");
     this.warnEl.classList.remove("show");
+    this.onSurge(false, 0); // 0.5.0: no stale surge banner from the previous connection
+    this.onTide(false, 0);  // 0.5.0: ...and no stale lantern-tide banner either
   }
 
   // ---------- per-frame ----------
@@ -540,8 +715,11 @@ export class Hud {
       this.tHp.style.transform = `scaleX(${Math.max(0, target.s.hp / Math.max(1, target.s.mhp))})`;
       this.tHpT.textContent = target.s.k === "npc" ? "" : `${Math.max(0, Math.ceil(target.s.hp))} / ${target.s.mhp}`;
       this.tFrame.classList.toggle("npc", target.s.k === "npc");
+      // burn status comes straight off the snapshot flag, so it clears on the next snapshot after the DoT ends
+      this.tBurn.hidden = !(target.s.k === "mob" && target.s.burning === true);
     } else {
       this.tFrame.classList.add("hidden");
+      this.tBurn.hidden = true;
       this.lastTargetId = -1;
     }
 
@@ -678,6 +856,32 @@ export class Hud {
     } else this.boss.classList.remove("show");
     const bossNow = !!bs && !bs.dead && bs.s.hp > 0;
     if (bossNow !== this.bossAudio) { this.bossAudio = bossNow; audio.setBoss(bossNow); }
+
+    // 0.5.0 Mist Surge / Lantern Tide / Market Day banners: tick the countdowns and self-hide if an end announcement never arrived
+    if (this.surgeEndAt > 0) {
+      const left = this.surgeEndAt - a.nowMs;
+      if (left <= 0) this.onSurge(false, 0);
+      else {
+        const txt = `${Math.ceil(left / 1000)} s`;
+        if (txt !== this.surgeTxt) { this.surgeTxt = txt; this.surgeCd.textContent = txt; }
+      }
+    }
+    if (this.tideEndAt > 0) {
+      const left = this.tideEndAt - a.nowMs;
+      if (left <= 0) this.onTide(false, 0);
+      else {
+        const txt = `${Math.ceil(left / 1000)} s`;
+        if (txt !== this.tideTxt) { this.tideTxt = txt; this.tideCd.textContent = txt; }
+      }
+    }
+    if (this.marketEndAt > 0) {
+      const left = this.marketEndAt - a.nowMs;
+      if (left <= 0) this.onMarket(false, 0);
+      else {
+        const txt = `${Math.ceil(left / 1000)} s`;
+        if (txt !== this.marketTxt) { this.marketTxt = txt; this.marketCd.textContent = txt; }
+      }
+    }
 
     this.perf.textContent = `Ping ${Math.round(a.ping)} ms · ${Math.round(a.fps)} FPS`;
   }

@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.5.0 - The Hollow expansion (2026-10-30)
+
+Content and systems added on top of 0.4.0; protocol stays v3 (every message is additive).
+
+**Classes and combat**
+- **Blade Dancer**, a 4th class: a fast melee duelist with its own Dao weapons, crest, glyph, skill icons, cast VFX and audio. Four skills with Qi costs and cooldowns, wired through the same authoritative cast pipeline as the other classes.
+- **Burn** damage-over-time: the Talisman Master's Fire Talisman now ignites its target (3 ticks over 3 s, scaling with level). The burn ticks as ordinary `damage` events, so it grants threat/XP and can finish a kill. Visible client-side: flame sprites plus a warm emissive pulse on the burning mob, and a "Burning" indicator in the target frame, with a clean reset when it expires.
+- **Qi Elixir** consumable: restores 50 Qi (the first way to recover Qi beyond regen). Sold by Peddler Hao and craftable from wisp essence and bamboo fibre.
+- **Cultivation realms**: Qi Condensation, Foundation Establishment, Core Formation, Nascent Soul and Spirit Severing at levels 1/5/10/15/20. Each breakthrough announces in chat and grants a permanent max-HP bonus (the realm name shows in the HUD).
+
+**Enemies and bosses**
+- **Ink Wisp** (passive spirit, lv 4-6) and **Thorn Sprite** (passive ranged line-spitter, lv 3-5) mob families, each with its own spawn group, loot and client model.
+- **Mist Warden**, a second boss in the south-east hollow: faster telegraphs, lighter frame than the Stone Guardian.
+- **Hollow Hierophant**, a third boss with a new **summon** mechanic: every 10 s it summons two Thorn Sprites beside itself (capped, corpse-pruned, cleaned up on death/leash/reset).
+- **The Hollow Bride**, a fourth boss (lv 12, eastern bride-steps) with an **invulnerable/vulnerable rhythm**: 8 s VEILED (all damage refused, telegraphed kerchief lashes, she drifts and re-targets) alternating with 5 s REVEALED (full damage taken, melee x1.5). Both transitions are announced, the target frame and her model carry the state, and her immunity is re-derived server-side from sim time on every hit.
+- **Mist Surge** world event: every 8 minutes, for 90 s, all mobs deal +20 % damage. The world announces the start and end, the state is sent over the wire (including to players logging in mid-surge), and the HUD shows a countdown banner.
+
+**Social, travel and world**
+- **Parties** (O): session-only groups of up to five with invites (60 s TTL), accept/decline/leave, leader migration, disconnect cleanup and a paper-card party panel; `/invite`, `/accept`, `/decline` and `/leave` also work as chat commands. Grouping pays: a kill also grants every living party member within 45 u **50 % of their own level-scaled kill XP** (loot, coin, jade and quest credit are never duplicated).
+- **Player-to-player trading**: `/trade Name` opens a two-column window (items + coin, Ready per side) between players within 6 u. Offers are **references only** until both sides confirm; the swap re-validates from live bags and wallets, applies atomically with rollback, and cancelling / disconnecting / dying / walking apart moves nothing. Equipped items can never be traded, so no dupe or loss path exists.
+- **Spirit-sword mount** (R): ride a procedural ink-wash jian at **1.6x travel speed**, server-authoritative (the anti-cheat ceiling rises only while mounted); casting or dying dismounts.
+- **Spirit companion** (P): a cosmetic paper-lantern fox-wisp that glides after the local player with soft damping, persisted in `localStorage`, calmed by reduced-motion; costs about 4 draw calls.
+- **Weather layer**: a deterministic weather cycle (mostly clear, occasional mist banks, sometimes soft ink-rain) with smooth crossfades, camera-following ink billboards and one wind-leaning streak system; `?weather=clear|mist|rain` forces a state for testing and reduced-motion quiets the motion.
+- **Treasure caches**: six fixed caches around the valley; F within 3.5 u opens one for 15-30 coin, one or two material stacks and a 20 % chance of fine gear; it refills after 120 s.
+- **Lantern Tide** (world event #2): every 10 minutes, for 2 minutes, kills pay **+50 % coin and +25 % XP** (gold HUD banner).
+- **Market Day** (world event #3): every 15 minutes, for 3 minutes, Peddler Hao sells **25 % cheaper** and pays **50 % more** for goods sold to him (paper-red HUD banner); the shift is applied at the till on the listed prices, so the stall is never a coin printer.
+
+**Content and progression**
+- **Gear set bonuses**: five sets (Wanderer, Bamboo Weave, Jade, Houndfang, Thornweave) with 2-piece and 3-piece bonuses applied through the gear summary; the gear panel labels the active set.
+- **Thornweave** set: hood (drop), robe (craft), boots (vendor) with 2pc/3pc bonuses, plus its recipe at Artisan Tao.
+- **Four quest chains** beyond the main chain: "Wisps of the Hollow" (Peddler Hao), "Thorns of the Reed" (Lantern Keeper Mei, three linked steps), "The Mist Ward" (Gate Warden Wu, a post-finale Mist Warden hunt with the "Mistbreaker" title) and "Forge-Sworn" (Artisan Tao's three linked steps, ending in the Hound-Fang Charm and the "Forge-Sworn" title). 16 side quests in total.
+- **Merit seals** expanded from 20 to **30** (415 points, 25 titles), adding bestiary completion, all three bosses, 150 kills, Lantern-Tide kills, master smithing, rare-in-four-slots, set completion and the level-15 realm; completion requirements are computed from the real data sizes so they cannot drift.
+- **Bestiary / Codex**: persisted per-mob kill counts, sent to the client and browsable in a new panel (Shift+B) that shows discovered mobs and "???" for the never-slain.
+- **Daily board** expanded from 6 to 11 tasks (Thorn Sprites, Ink Wisps, wisp essence, Mist Warden, Hollow Hierophant), with boss dailies paying a premium.
+
+**UI / UX**
+- **Combat log** (C): recent damage dealt/taken, crits and heals with colour cues.
+- **Quest tracker**: a persistent HUD strip of active side quests and objectives, hidden when empty.
+- **Session statistics** (V): mobs slain, damage dealt/taken, healing, XP and session time; resets on reconnect.
+- **Combat feedback**: a red screen-edge flash when the local player takes damage, plus a slow low-HP pulse (respects reduced-motion and safe-flash settings).
+- **Bag/gear UX**: a smart Sort button, per-slot "Equip Best" (only offered when the candidate beats what is worn), and a "vs equipped" stat-delta block in gear tooltips.
+
+**Quality**
+- Test suite made deterministic: the bot integration test no longer races login state, quest replies, interest-management snapshots, the boss turn-in or the daily-message count (also date-independent), and the economy suite passes regardless of which board the UTC date seeds.
+- README, CHANGELOG and message-format docs brought in line with the build.
+
 ## 0.4.0 — Dodge, Qi and gear (2026-10-29)
 
 - **Dodge roll (Space).** Universal, server-authoritative: a 6-unit dash over 0.25 s with 0.25 s of invulnerability, 1.5 s cooldown, 15 Qi. The server owns the movement (exempt from walking-speed accounting, clamped to the world) and `hurtPlayer` negates any hit that lands during the i-frames (slams, melee, poison) and tells the client, which shows "Dodged!". New `dodge` client message and `dodge` / `dodged` events (additive, protocol stays v3). Client: predicted roll, forward somersault of the avatar, ink-brush streak on the ground plus paper-white speed lines (`client/src/vfx/roll.ts`), whoosh and bell sounds, a Dodge slot on the hotbar with cooldown sweep.

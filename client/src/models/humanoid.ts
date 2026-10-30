@@ -390,7 +390,7 @@ function dying(r: Rig, a: Anim, dis: Dissolve, shadow: THREE.Object3D | undefine
 function makeAvatar(r: Rig, style: Style, L: Look, height: number): Avatar {
   const hnd: BakeHandle = bake(r.root, 0.34);
   // brush-painted face: a curved patch riding the head bone (child of the baked mesh so distance-LOD hides it with the body)
-  const face = faceMesh((L.face ?? (L.cls === "npc" ? "elder" : L.cls === "sword" ? "stern" : L.cls === "talisman" ? "calm" : "gentle")) as FaceStyle);
+  const face = faceMesh((L.face ?? (L.cls === "npc" ? "elder" : (L.cls === "sword" || L.cls === "blade") ? "stern" : L.cls === "talisman" ? "calm" : "gentle")) as FaceStyle);
   hnd.skinned.add(face);
   const fm = new THREE.Matrix4();
   const syncFace = () => {
@@ -431,6 +431,11 @@ export function buildClass(cls: ClassId): Avatar {
     const L: Look = { robe: hx(PAL.jade, PAL.ink, 0.45), robe2: hx(PAL.paper, PAL.jade, 0.2), trim: PAL.gold, inner: PAL.inkSoft, sash: PAL.gold, hair: PAL.ink, cuff: PAL.gold, hat: "guan", cls, sleeveLen: 0.7 };
     const r = buildRig(L); dressTalisman(r);
     return makeAvatar(r, "cast", L, 2.3);
+  }
+  if (cls === "blade") {
+    const L: Look = { robe: hx(PAL.vermilion, PAL.ink, 0.3), robe2: hx(PAL.ink, PAL.inkSoft, 0.2), trim: PAL.gold, inner: PAL.inkSoft, sash: PAL.gold, hair: PAL.ink, cuff: PAL.inkSoft, ribbon: PAL.gold, cls };
+    const r = buildRig(L); dressSword(r, L);
+    return makeAvatar(r, "slash", L, 2.1);
   }
   const L: Look = { robe: hx(PAL.jade, PAL.paper, 0.28), robe2: PAL.paper, trim: hx(PAL.paper, PAL.paperDark, 0.2), inner: hx(PAL.jade, PAL.ink, 0.55), sash: hx(PAL.gold, PAL.vermilion, 0.15), hair: hx(PAL.ink, PAL.inkSoft, 0.2), cuff: PAL.paper, hat: "douli", sleeveLen: 0.6, cls };
   const r = buildRig(L); dressPhysician(r);

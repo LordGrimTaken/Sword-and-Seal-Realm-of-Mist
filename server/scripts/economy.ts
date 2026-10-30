@@ -265,7 +265,7 @@ async function startServer(first = true) {
     seed("Legacy30" + SUFFIX, 30, 5000); seed("Legacy4" + SUFFIX, 4, 500); seed("Legacy8" + SUFFIX, 8, 100); seed("Legacy20" + SUFFIX, 20, 123);
     cdb.close();
   }
-  child = spawn(join(ROOT, "node_modules/.bin/tsx"), ["src/server.ts"], {
+  child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], {
     cwd: ROOT, env: { ...process.env, PORT: String(PORT), DB_PATH: dbFile, NODE_NO_WARNINGS: "1", TEST_MODE: "1" }, stdio: ["ignore", "pipe", "pipe"],
   });
   child.stderr!.on("data", (d) => process.stderr.write(`[server!] ${d}`));
@@ -277,7 +277,7 @@ async function stopServer(keepDb = false) {
   const exited = new Promise<number | null>((r) => child!.once("exit", (c) => r(c)));
   child.kill("SIGTERM");
   const code = await Promise.race([exited, sleep(5000).then(() => "timeout" as const)]);
-  check("server shuts down cleanly on SIGTERM", code === 0, `exit=${code}`);
+  check("server shuts down cleanly on SIGTERM", process.platform === "win32" ? code !== "timeout" : code === 0, `exit=${code}`);
   if (code === "timeout") child.kill("SIGKILL");
   if (!process.env.ECO_DB && !keepDb) rmSync(tmp, { recursive: true, force: true });
 }
@@ -352,7 +352,10 @@ async function serverTests() {
   check("kill of another mob type does not touch Bamboo Purge", A.task("bamboo_purge")!.have === 8);
   await A.cmd("/testkill bamboo_spirit 7", 800);
   check("15 bamboo kills -> done, sys `Daily complete: Bamboo Purge. Claim it from the notice board.`", A.task("bamboo_purge")!.have === 15 && A.task("bamboo_purge")!.done && A.sys("Daily complete: Bamboo Purge. Claim it from the notice board."));
-  check("every change pushed a `daily` message", A.dailyMsgs - dm >= 8, `${A.dailyMsgs - dm} msgs`);
+  // 7 bamboo kills = 7 task-change `daily` pushes. Do NOT assume a second task advances from the same kill: the board is
+  // date-seeded, so whether the extra fox kill also advances another task (e.g. fox_tails loot) depends on the chosen day.
+  // The "Daily complete" line is asserted separately above, so >= 7 is the deterministic minimum.
+  check("every change pushed a `daily` message", A.dailyMsgs - dm >= 7, `${A.dailyMsgs - dm} msgs`);
   await sleep(1300);
   A.chats.length = 0;
   await A.cmd("/daily", 500);

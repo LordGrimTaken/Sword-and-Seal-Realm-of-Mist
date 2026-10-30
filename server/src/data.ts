@@ -1,4 +1,5 @@
 // All tunable game data lives here: zone, classes/skills, mobs, spawns, NPCs, XP curve.
+import { realmForLevel } from "../../shared/protocol.ts";
 import type { ClassId, GearSlot, GearStats, ItemInfo, MobType, Rarity, SkillDef, ZoneInfo } from "../../shared/protocol.ts";
 
 export const ZONE: ZoneInfo = {
@@ -27,6 +28,88 @@ export const TUNING = {
   // first-minutes friendliness
   safeSpawnRadius: 35,     // no mob spawn point within this distance of ZONE.spawn
 };
+
+// ---------------- Mist Surge: a repeating world event (0.5.0) ----------------
+/** The Mist Surge is derived from the deterministic simulation clock (`world.time`), so no per-player state is involved.
+ *  For the first `durationSec` of every `intervalSec` window every mob deals `mobDamageMult` times its normal damage.
+ *  The first window opens one full interval after a world starts (a fresh world begins calm), then it repeats forever. */
+export const MIST_SURGE = {
+  intervalSec: 480,      // one surge window every 8 minutes
+  durationSec: 90,       // ...of which the surge is active for 90 seconds
+  mobDamageMult: 1.2,    // +20% mob damage while it runs
+};
+
+/** The Mist Surge window at `time` seconds of sim time. `endsIn` = whole seconds left in an active surge (0 when inactive). */
+export function mistSurgeAt(time: number): { active: boolean; endsIn: number } {
+  const { intervalSec, durationSec } = MIST_SURGE;
+  if (!(intervalSec > 0) || !(durationSec > 0) || durationSec >= intervalSec) return { active: false, endsIn: 0 }; // disabled/misconfigured
+  const t = time - intervalSec; // first window opens after one quiet interval
+  if (t < 0) return { active: false, endsIn: 0 };
+  const into = t % intervalSec;
+  if (into >= durationSec) return { active: false, endsIn: 0 };
+  return { active: true, endsIn: Math.max(1, Math.ceil(durationSec - into)) };
+}
+
+/** Damage multiplier mobs deal at `time`: 1 normally, `mobDamageMult` during a Mist Surge. */
+export const mistSurgeMult = (time: number) => (mistSurgeAt(time).active ? MIST_SURGE.mobDamageMult : 1);
+
+// ---------------- Lantern Tide: a second repeating world event (0.5.0) ----------------
+/** The Lantern Tide shares the Mist Surge shape and the same deterministic clock derivation, but rewards instead of threatens:
+ *  while it runs, kills pay a bounded bonus (kill coin x `coinMult`, kill XP x `xpMult`). It is a multiplier on the existing
+ *  kill-reward path, never a new reward source, so the economy stays inside its tested bounds. The first window opens one
+ *  full interval after a world starts, so a fresh server (and every server test suite) begins calm. */
+export const LANTERN_TIDE = {
+  intervalSec: 600,      // one tide window every 10 minutes
+  durationSec: 120,      // ...of which the tide is active for 2 minutes
+  coinMult: 1.5,         // +50% coin from kills while the tide is on
+  xpMult: 1.25,          // +25% kill XP while the tide is on
+};
+
+/** The Lantern Tide window at `time` seconds of sim time. `endsIn` = whole seconds left in an active tide (0 when inactive). */
+export function lanternTideAt(time: number): { active: boolean; endsIn: number } {
+  const { intervalSec, durationSec } = LANTERN_TIDE;
+  if (!(intervalSec > 0) || !(durationSec > 0) || durationSec >= intervalSec) return { active: false, endsIn: 0 }; // disabled/misconfigured
+  const t = time - intervalSec; // first window opens after one quiet interval
+  if (t < 0) return { active: false, endsIn: 0 };
+  const into = t % intervalSec;
+  if (into >= durationSec) return { active: false, endsIn: 0 };
+  return { active: true, endsIn: Math.max(1, Math.ceil(durationSec - into)) };
+}
+
+/** Kill-coin multiplier at `time`: 1 normally, `coinMult` during a Lantern Tide (rounded by the caller, after the base roll). */
+export const lanternTideCoinMult = (time: number) => (lanternTideAt(time).active ? LANTERN_TIDE.coinMult : 1);
+/** Kill-XP multiplier at `time`: 1 normally, `xpMult` during a Lantern Tide (rounded by the caller, after killXp). */
+export const lanternTideXpMult = (time: number) => (lanternTideAt(time).active ? LANTERN_TIDE.xpMult : 1);
+
+// ---------------- Market Day: a third repeating world event (0.5.0) ----------------
+/** Market Day is the economy counterpart of the other two events: for the first `durationSec` of every `intervalSec` window
+ *  Peddler Hao's transactions shift in the player's favour - he buys from players for `sellMult` times the normal sell
+ *  price and sells to players for `buyMult` times the normal SHOP price. The multipliers are applied only when a shop
+ *  transaction is priced (`buy`/`sell` in game/content.ts) and the shop dialog quotes the same shifted prices; the static
+ *  SHOP table, kill rewards, quest rewards and daily claims are untouched. The first window opens one full interval after a
+ *  world starts (and the interval is longer than every server test suite), so a fresh world begins calm. */
+export const MARKET_DAY = {
+  intervalSec: 900,      // one market window every 15 minutes
+  durationSec: 180,      // ...of which the market is open for 3 minutes
+  buyMult: 0.75,         // buying from Peddler Hao costs 25% less
+  sellMult: 1.5,         // selling to Peddler Hao pays 50% more
+};
+
+/** The Market Day window at `time` seconds of sim time. `endsIn` = whole seconds left in an open market (0 when inactive). */
+export function marketDayAt(time: number): { active: boolean; endsIn: number } {
+  const { intervalSec, durationSec } = MARKET_DAY;
+  if (!(intervalSec > 0) || !(durationSec > 0) || durationSec >= intervalSec) return { active: false, endsIn: 0 }; // disabled/misconfigured
+  const t = time - intervalSec; // first window opens after one quiet interval
+  if (t < 0) return { active: false, endsIn: 0 };
+  const into = t % intervalSec;
+  if (into >= durationSec) return { active: false, endsIn: 0 };
+  return { active: true, endsIn: Math.max(1, Math.ceil(durationSec - into)) };
+}
+
+/** Shop-buying multiplier at `time`: 1 normally, `buyMult` (< 1) while the market is open (applied to the SHOP price by the caller). */
+export const marketBuyMult = (time: number) => (marketDayAt(time).active ? MARKET_DAY.buyMult : 1);
+/** Shop-selling multiplier at `time`: 1 normally, `sellMult` (> 1) while the market is open (applied to the sell price by the caller). */
+export const marketSellMult = (time: number) => (marketDayAt(time).active ? MARKET_DAY.sellMult : 1);
 
 // ---------------- Qi and dodge roll (0.4.0) ----------------
 /** Jade Qi pool. Every skill costs Qi (see the `qi` field of each skill below) and the dodge roll costs `dodgeCost`.
@@ -92,6 +175,15 @@ export const DAILY_POOL: DailyDef[] = [
   { id: "shrine_duty", title: "Shrine Duty", desc: "Defeat the Stone Guardian.", kind: "kill", target: "stone_guardian", need: 1, coin: 250, jade: 3, xp: 1200 },
   { id: "word_with_mei", title: "A Word with Mei", desc: "Speak to Lantern Keeper Mei.", kind: "talk", target: "mei", need: 1, coin: 20, jade: 1, xp: 100 },
   { id: "steady_cultivation", title: "Steady Cultivation", desc: "Earn 1500 XP.", kind: "xp", target: "", need: 1500, coin: 100, jade: 1, xp: 400 },
+  // 0.5.0: newer content on Fen's board. Normal dailies stay in the 60-100 coin / 250-400 XP band;
+  // the two new bosses pay like Shrine Duty (a boss daily is always the premium task).
+  { id: "reed_sweep", title: "Reed Sweep", desc: "Defeat 8 Thorn Sprites.", kind: "kill", target: "thorn_sprite", need: 8, coin: 65, jade: 1, xp: 280 },
+  { id: "hollow_lights", title: "Hollow Lights", desc: "Defeat 6 Ink Wisps.", kind: "kill", target: "ink_wisp", need: 6, coin: 70, jade: 1, xp: 300 },
+  { id: "cold_light", title: "Cold Light", desc: "Gather 4 Wisp Essence.", kind: "loot", target: "Wisp Essence", need: 4, coin: 80, jade: 1, xp: 320 },
+  { id: "second_ward", title: "The Second Ward", desc: "Defeat the Mist Warden.", kind: "kill", target: "mist_warden", need: 1, coin: 230, jade: 3, xp: 1150 },
+  { id: "masked_summoner", title: "The Masked Summoner", desc: "Defeat the Hollow Hierophant.", kind: "kill", target: "hollow_hierophant", need: 1, coin: 280, jade: 4, xp: 1400 },
+  // 0.5.0: the fourth boss daily. Boss dailies stay at or above the best normal daily (100 coin / 1 jade / 400 XP).
+  { id: "hollow_wedding", title: "The Hollow Wedding", desc: "Defeat the Hollow Bride.", kind: "kill", target: "hollow_bride", need: 1, coin: 320, jade: 4, xp: 1600 },
 ];
 
 // ---------------- Classes & skills ----------------
@@ -103,6 +195,7 @@ export interface SkillData {
   healPct?: number;    // extra heal as fraction of target max HP
   healAllies?: boolean;// heal nearby allied players too (centered on caster)
   slow?: { mult: number; dur: number }; // applied to mob hit
+  burn?: { base: number; perLv: number; ticks: number; every: number }; // damage over time applied to the mob hit
   guard?: { mult: number; dur: number };// incoming damage multiplier on caster
 }
 export interface ClassData {
@@ -129,7 +222,7 @@ export const CLASSES: Record<ClassId, ClassData> = {
   talisman: {
     name: "Talisman Master", baseHp: 90, hpPerLevel: 18, atk: 8, atkPerLevel: 3, crit: 0.15, critMult: 1.7,
     skills: [
-      { def: sk(1, "Fire Talisman", "", 1.2, 20, "bolt", 5), target: "enemy", power: 1.1 },
+      { def: sk(1, "Fire Talisman", "", 1.2, 20, "bolt", 5), target: "enemy", power: 1.1, burn: { base: 1.5, perLv: 0.7, ticks: 3, every: 1 } },
       { def: sk(2, "Thunder Talisman", "", 6.0, 24, "aoe", 20), target: "point", power: 1.6, radius: 6 },
       { def: sk(3, "Frost Seal", "", 8.0, 18, "bolt", 15), target: "enemy", power: 0.8, slow: { mult: 0.4, dur: 4 } },
       { def: sk(4, "Wind Step", "", 12.0, 0, "heal", 15), target: "self", power: 0, guard: { mult: 0.6, dur: 4 } },
@@ -144,9 +237,20 @@ export const CLASSES: Record<ClassId, ClassData> = {
       { def: sk(4, "Meridian Surge", "", 20.0, 0, "heal", 30), target: "self", power: 0, healPct: 0.4 },
     ],
   },
+  blade: {
+    name: "Blade Dancer", baseHp: 100, hpPerLevel: 20, atk: 8, atkPerLevel: 2.8, crit: 0.2, critMult: 1.7,
+    skills: [
+      { def: sk(1, "Gale Slash", "", 0.8, 3.5, "melee", 3), target: "enemy", power: 0.85 },
+      { def: sk(2, "Whirlwind Arc", "", 3.0, 14, "bolt", 12), target: "enemy", power: 1.4 },
+      { def: sk(3, "Storm of Blades", "", 8.0, 0, "aoe", 20), target: "point", power: 1.8, radius: 5 },
+      { def: sk(4, "Dancer's Grace", "", 12.0, 0, "heal", 15), target: "self", power: 0, healPct: 0.08, guard: { mult: 0.55, dur: 5 } },
+    ],
+  },
 };
 
-export const maxHpFor = (cls: ClassId, lv: number) => CLASSES[cls].baseHp + CLASSES[cls].hpPerLevel * (lv - 1);
+/** Max HP from class levels plus the cultivation realm's flat bonus (see REALMS in shared/protocol.ts). The bonus only
+ *  changes at a breakthrough level (5/10/15/20), so every level still adds hpPerLevel and the curve stays monotonic. */
+export const maxHpFor = (cls: ClassId, lv: number) => CLASSES[cls].baseHp + CLASSES[cls].hpPerLevel * (lv - 1) + realmForLevel(lv).hpBonus;
 export const attackFor = (cls: ClassId, lv: number) => CLASSES[cls].atk + CLASSES[cls].atkPerLevel * (lv - 1);
 
 // ---------------- Mobs ----------------
@@ -171,6 +275,32 @@ export interface BossDef {
   enrageMult: number;            // damage multiplier when enraged
   creditRange: number;           // players within this distance of the boss at death are credited
   targetRange: number;           // telegraph targets are chosen among players this close
+  /** 0.5.0 summon-adds mechanic: while engaged, every `every` seconds call `count` minions of `type` beside the boss. */
+  summon?: { type: MobType; count: number; every: number };
+  /** 0.5.0 The Hollow Bride: a deterministic VEILED/REVEALED rhythm instead of (or in front of) the pattern rotation.
+   *  The phase is derived from `world.time - boss.engagedAt`, so the state machine stores no extra per-mob data. */
+  veil?: VeilDef;
+}
+
+/** VEILED/REVEALED rhythm for a veil boss (data-driven; see veilPhaseAt). While VEILED the boss is immune to all damage and
+ *  only lashes with its telegraphed swing while drifting; while REVEALED it takes full damage and hits `revealDmgMult` harder. */
+export interface VeilDef {
+  veilSec: number;        // VEILED phase length, seconds
+  revealSec: number;      // REVEALED phase length, seconds (the damage window)
+  lashEvery: number;      // seconds between telegraphed lashes while VEILED (a new veil always opens with `firstLash`)
+  firstLash: number;      // delay after a veil begins until the first lash
+  revealDmgMult: number;  // melee damage multiplier while REVEALED (the "hits harder" part)
+  driftSpeedMult: number; // movement multiplier while VEILED (she drifts, she does not charge)
+}
+
+export type VeilPhase = "veiled" | "revealed";
+/** Deterministic phase for a veil boss: the first `veilSec` seconds of each cycle after engagement are VEILED, the rest REVEALED.
+ *  A boss that has not engaged yet (engagedAt 0) is reported as REVEALED, so damage is never wrongly blocked before the fight. */
+export function veilPhaseAt(time: number, engagedAt: number, veil: VeilDef): VeilPhase {
+  const cycle = veil.veilSec + veil.revealSec;
+  if (!(cycle > 0) || !(engagedAt > 0)) return "revealed";
+  const elapsed = Math.max(0, time - engagedAt);
+  return elapsed % cycle < veil.veilSec ? "veiled" : "revealed";
 }
 /** Ground-telegraphed melee swing: the mob freezes for `windup` s showing a cone/line in front of it, then hits everyone still inside. */
 export interface SwingDef { shape: "cone" | "line"; windup: number; reach: number; arc: number /* cone opening, radians */; width: number /* line width */ }
@@ -256,6 +386,94 @@ export const MOBS: Record<MobType, MobDef> = {
     ],
     swing: { shape: "cone", windup: 0.5, reach: 4.6, arc: 2.2, width: 0 },
   },
+  // Ink Wisp: a floating ink-shadow spirit in the misty hollow south of the pond. Fast, weak, lashes with a strip of ink.
+  ink_wisp: {
+    type: "ink_wisp", name: "Ink Wisp", hpBase: 55, hpPerLv: 26, dmgBase: 3, dmgPerLv: 1.5,
+    speed: 4.2, aggro: 10, leash: 30, wander: 9, attackRange: 2.6, attackCd: 1.6, respawn: 20, xpPerLv: 11,
+    loot: [
+      { item: "Wisp Essence", itemZh: "", chance: 0.75, min: 1, max: 1 },
+      { item: "Serpent Gall", itemZh: "", chance: 0.04, min: 1, max: 1 },
+    ],
+    swing: { shape: "line", windup: 0.5, reach: 3.4, arc: 0, width: 1.5 },
+  },
+  // Mist Warden: a second boss in the south-east hollow. Faster telegraphs than the Guardian but less raw health; drops wisps' essence.
+  mist_warden: {
+    type: "mist_warden", name: "Mist Warden", hpBase: 600, hpPerLv: 110, dmgBase: 20, dmgPerLv: 1,
+    speed: 3.4, aggro: 12, leash: 45, wander: 3, attackRange: 4.2, attackCd: 2.4, respawn: 150, xpPerLv: 220,
+    loot: [
+      { item: "Wisp Essence", itemZh: "", chance: 1, min: 2, max: 3 },
+      { item: "Serpent Gall", itemZh: "", chance: 1, min: 1, max: 2 },
+    ],
+    boss: {
+      slamEvery: [6, 8], slamEvery2: 6, firstSlam: 2.5,
+      phase2At: 0.5,
+      slam: { radius: 6, delay: 1.5, dmg: 70 },
+      stomp: { radius: 7, delay: 1.4, dmg: 62 },
+      scatter: { radius: 4, delay: 1.8, dmg: 45, n: 3, spread: 8 },
+      phase3At: 0.3,
+      beam: { len: 24, width: 3.2, lead: 0.8, sweepTime: 2.5, sweep: Math.PI / 2, tickEvery: 0.25, dmg: 22 },
+      enrageAfter: 120, enrageMult: 1.4, creditRange: 70, targetRange: 40,
+    },
+  },
+  // Thorn Sprite: a small, passive-until-provoked ranged mob that spits a thorn. It reuses the Lotus Toad's line-telegraph `swing` (no new AI):
+  // slower, shorter spit than the toad's, so it stays a gentle step up from the toads along the pond's north bank. lv3-5.
+  thorn_sprite: {
+    type: "thorn_sprite", name: "Thorn Sprite", hpBase: 60, hpPerLv: 30, dmgBase: 3, dmgPerLv: 1.2,
+    speed: 3.4, aggro: 0.01, leash: 28, wander: 6, attackRange: 7, attackCd: 2.8, respawn: 22, xpPerLv: 10,
+    loot: [
+      { item: "Bamboo Fiber", itemZh: "", chance: 0.7, min: 1, max: 2 },
+      { item: "Thornweave Hood", itemZh: "", chance: 0.05, min: 1, max: 1 }, // 0.5.0: the fifth gear set's hood; the sprites weave it from the reeds' thorn-fibre
+    ],
+    swing: { shape: "line", windup: 0.8, reach: 7, arc: 0, width: 1.2 },
+  },
+  // Hollow Hierophant: the third boss, a masked summoner at a drowned shrine in the south-west misty hollow beyond the Ink Wisps.
+  // Its signature is the summon: every 10 s it calls two Thorn Sprites out of the reeds. Less raw health than the Stone Guardian,
+  // but the arena fills with adds (capped, and cleared when the boss dies or leashes) so the fight is about clearing them, not outlasting them. lv9.
+  hollow_hierophant: {
+    type: "hollow_hierophant", name: "Hollow Hierophant", hpBase: 880, hpPerLv: 125, dmgBase: 18, dmgPerLv: 1.1,
+    speed: 3.2, aggro: 12, leash: 42, wander: 3, attackRange: 4.2, attackCd: 2.5, respawn: 150, xpPerLv: 235,
+    loot: [
+      { item: "Wisp Essence", itemZh: "", chance: 1, min: 2, max: 2 },
+      { item: "Serpent Gall", itemZh: "", chance: 1, min: 1, max: 2 },
+      { item: "Thornweave Robe", itemZh: "", chance: 0.2, min: 1, max: 1 }, // 0.5.0: a thorn-spun robe woven from the reeds it calls
+    ],
+    boss: {
+      slamEvery: [6.5, 8.5], slamEvery2: 6.5, firstSlam: 3,
+      phase2At: 0.55,
+      slam: { radius: 6.5, delay: 1.6, dmg: 68 },
+      stomp: { radius: 7.5, delay: 1.5, dmg: 60 },
+      scatter: { radius: 4, delay: 1.8, dmg: 42, n: 3, spread: 8.5 },
+      phase3At: 0.28,
+      beam: { len: 26, width: 3.0, lead: 0.85, sweepTime: 2.8, sweep: Math.PI / 2, tickEvery: 0.3, dmg: 20 },
+      enrageAfter: 140, enrageMult: 1.45, creditRange: 70, targetRange: 40,
+      summon: { type: "thorn_sprite", count: 2, every: 10 },
+    },
+  },
+  // The Hollow Bride: the fourth boss, a ceremonial wraith on the eastern ridge above the Fox Fire Hollow. Her hook is a
+  // deterministic VEILED/REVEALED rhythm: 8 s VEILED (immune to damage, lashes telegraphed lines while drifting toward a
+  // chosen player at 55% speed), then 5 s REVEALED (takes full damage, melee x1.5). Players dodge the lashes, burst the
+  // reveal. The generic pattern fields below are present for shape-compatibility but the veil fight replaces the rotation. lv12.
+  hollow_bride: {
+    type: "hollow_bride", name: "The Hollow Bride", hpBase: 1400, hpPerLv: 260, dmgBase: 26, dmgPerLv: 1.6,
+    speed: 3.2, aggro: 14, leash: 46, wander: 3, attackRange: 5.0, attackCd: 1.9, respawn: 180, xpPerLv: 320,
+    loot: [
+      { item: "Wisp Essence", itemZh: "", chance: 1, min: 2, max: 3 },
+      { item: "Serpent Gall", itemZh: "", chance: 1, min: 1, max: 2 },
+      { item: "Jade Scale Vest", itemZh: "", chance: 0.15, min: 1, max: 1 }, // 0.5.0: her bridal scales, once a fine robe
+    ],
+    swing: { shape: "line", windup: 0.9, reach: 12, arc: 0, width: 1.8 }, // kerchief lash: a long line, used only while VEILED
+    boss: {
+      slamEvery: [9, 11], slamEvery2: 9, firstSlam: 4,
+      phase2At: 0.5,
+      slam: { radius: 7, delay: 1.7, dmg: 70 },
+      stomp: { radius: 8, delay: 1.6, dmg: 62 },
+      scatter: { radius: 4.5, delay: 1.9, dmg: 44, n: 3, spread: 8.5 },
+      phase3At: 0.25,
+      beam: { len: 26, width: 2.8, lead: 0.9, sweepTime: 2.8, sweep: Math.PI / 2, tickEvery: 0.32, dmg: 20 },
+      enrageAfter: 200, enrageMult: 1.45, creditRange: 80, targetRange: 50,
+      veil: { veilSec: 8, revealSec: 5, lashEvery: 2.6, firstLash: 1.4, revealDmgMult: 1.5, driftSpeedMult: 0.55 },
+    },
+  },
 };
 
 export interface SpawnGroup {
@@ -282,6 +500,15 @@ export const MOB_SPAWNS: SpawnGroup[] = [
   { type: "lotus_toad", count: 6, x: [0, 0], z: [0, 0], lv: [3, 5], points: [[22, -36], [-23, -37], [16, -50], [-17, -50], [20, -20], [-20, -18]] }, // pond shore
   { type: "stone_hound", count: 6, x: [0, 0], z: [0, 0], lv: [5, 7], points: [[-34, 62], [-30, 66], [-36, 68], [-12, 70], [-8, 66], [-14, 74]] },   // two packs of three, northern foothills
   { type: "old_whisker", count: 1, x: [0, 0], z: [0, 0], lv: [5, 5], points: [[58, 22]] },                                                           // named rare, fox hills
+  { type: "ink_wisp", count: 4, x: [0, 0], z: [0, 0], lv: [4, 6], points: [[-45, -55], [-51, -58], [-46, -62], [-54, -55]] },                        // misty hollow, south-west
+  { type: "mist_warden", count: 1, x: [0, 0], z: [0, 0], lv: [8, 8], points: [[60, -60]] },                                                           // second boss, south-east hollow
+  { type: "thorn_sprite", count: 4, x: [0, 0], z: [0, 0], lv: [3, 5], points: [[-14, -4], [-3, -10], [12, -8], [23, -10]] },                      // thorn sprites on the rise along the pond's north bank: 24-33 from the pond centre, 70-77 from the plaza spawn, 10+ from every other fixed spawn point and either side of the bridge landing's path
+  { type: "hollow_hierophant", count: 1, x: [0, 0], z: [0, 0], lv: [9, 9], points: [[-72, -72]] },                                                   // third boss, the drowned shrine at the south-west edge of the misty hollow: 72 from the plaza spawn and 24+ from the nearest Ink Wisp
+  // 0.5.0: fourth boss arena, "the eastern bride-steps" — a fixed point on the open eastern ridge (96, 62):
+  // 171 from the plaza spawn, 99/127/215 from the Guardian/Warden/Hierophant arenas, 16 from the nearest mob box
+  // (the fox hills group, which is spread over a 50x60 box) and 43 from the Fox Fire Hollow POI. Terrain there is
+  // flat and low (heightAt 0.35), so the 5 s REVEALED burst window is fought on open ground.
+  { type: "hollow_bride", count: 1, x: [0, 0], z: [0, 0], lv: [12, 12], points: [[96, 62]] },                                                       // fourth boss, the Hollow Bride
 ];
 
 /** Inventory limits. */
@@ -386,6 +613,7 @@ export const GEAR: GearDef[] = [
   G("Wanderer's Jian", "weapon", "common", 1, { atk: 2 }, 6, "A plain training sword with a cord-wrapped grip.", "sword"),
   G("Wanderer's Brush", "weapon", "common", 1, { atk: 2 }, 6, "A stiff-haired brush for painting wards.", "talisman"),
   G("Wanderer's Needle Case", "weapon", "common", 1, { atk: 2 }, 6, "Twelve silver needles in a worn lacquer case.", "physician"),
+  G("Wanderer's Dao", "weapon", "common", 1, { atk: 2 }, 6, "A curved single-edged blade, light enough to dance with.", "blade"),
   G("Wanderer's Hat", "head", "common", 1, { hp: 8 }, 5, "A woven straw hat against the valley rain."),
   G("Wanderer's Robe", "body", "common", 1, { hp: 12, def: 0.02 }, 8, "Rough grey cloth, sturdy enough."),
   G("Wanderer's Sandals", "boots", "common", 1, { hp: 6 }, 5, "Straw sandals with red ties."),
@@ -401,25 +629,56 @@ export const GEAR: GearDef[] = [
   G("Houndfang Jian", "weapon", "fine", 5, { atk: 5, crit: 0.01 }, 40, "The blade is notched like a fang.", "sword"),
   G("Houndfang Brush", "weapon", "fine", 5, { atk: 5, crit: 0.01 }, 40, "Hound-bristle tip; it paints fast, hard strokes.", "talisman"),
   G("Houndfang Needles", "weapon", "fine", 5, { atk: 5, crit: 0.01 }, 40, "Slim needles drawn from a hound's fang.", "physician"),
+  G("Houndfang Dao", "weapon", "fine", 5, { atk: 5, crit: 0.01 }, 40, "A curved blade notched like a fang, quick on the draw.", "blade"),
+  // ---- Thornweave set (0.5.0, fine, lv 6): the fifth set, woven from the reed bank's thorn-fibre. Hood drops from Thorn Sprites,
+  // the robe is one of Artisan Tao's recipes, the boots are Peddler Hao's stock. Its bonuses trade attack for health and defence.
+  G("Thornweave Hood", "head", "fine", 6, { hp: 20, def: 0.02 }, 40, "Thorn-fibre woven barb-outward; a claw slides off the neck."),
+  G("Thornweave Robe", "body", "fine", 6, { hp: 30, def: 0.04 }, 56, "Reed cord and bitter gall bind a robe the reeds cannot pick apart."),
+  G("Thornweave Boots", "boots", "fine", 6, { hp: 20, def: 0.03 }, 44, "Layered thorn-leather soles that grip the wet reed bank."),
   // ---- rare
   G("Silver Tail Cloak", "body", "rare", 5, { atk: 3, hp: 30, def: 0.04 }, 90, "Old Whisker's own silver fur, still cold with mist."),
   G("Cloudmist Pendant", "pendant", "rare", 6, { hp: 30, atk: 2 }, 80, "The Stone Guardian's master wore this."),
   G("Warden's Seal Charm", "charm", "rare", 6, { atk: 4, crit: 0.03, hp: 10 }, 110, "A mended Hollow Seal, now a ward instead of a curse."),
+  G("Wisp Lantern", "charm", "rare", 5, { hp: 10, crit: 0.02, def: 0.01 }, 70, "A captured wisp in a paper lantern; it hums with cold, guiding light."),
   // ---- epic
   G("Cloudpiercer Jian", "weapon", "epic", 8, { atk: 9, crit: 0.03 }, 220, "Said to cut the mist itself. A gift from the Gate Warden.", "sword"),
   G("Cloudpiercer Brush", "weapon", "epic", 8, { atk: 9, crit: 0.03 }, 220, "Its ink never dries. A gift from the Gate Warden.", "talisman"),
   G("Cloudpiercer Needles", "weapon", "epic", 8, { atk: 9, crit: 0.03 }, 220, "Needles that find the quiet in any wound. A gift from the Gate Warden.", "physician"),
+  G("Cloudpiercer Dao", "weapon", "epic", 8, { atk: 9, crit: 0.03 }, 220, "A blade that parts the mist before it parts a foe. A gift from the Gate Warden.", "blade"),
   G("Guardian's Heart", "pendant", "epic", 8, { hp: 45, atk: 5, def: 0.04 }, 240, "A warm stone core, set in a jade frame."),
 ];
 export const GEAR_BY_NAME = new Map(GEAR.map((g) => [g.name, g] as const));
 export const isGear = (item: string) => GEAR_BY_NAME.has(item);
 
-export interface ConsumableDef { name: string; text: string; healPct: number; cure: boolean; buy: number; sell: number }
+// ---------------- Gear set bonuses ----------------
+/** Equipping enough pieces of a named set grants escalating bonuses. Tiers are cumulative-at-or-above (e.g. 2-piece, then 4-piece). */
+export interface SetBonusDef { id: string; name: string; tiers: Array<{ count: number; stats: Partial<GearStats> }> }
+export const GEAR_SETS: SetBonusDef[] = [
+  { id: "wanderer", name: "Wanderer", tiers: [{ count: 2, stats: { atk: 2 } }, { count: 4, stats: { hp: 15, crit: 0.01 } }] },
+  { id: "bamboo", name: "Bamboo Weave", tiers: [{ count: 2, stats: { def: 0.02 } }] },
+  { id: "jade", name: "Jade", tiers: [{ count: 2, stats: { hp: 10, def: 0.02 } }] },
+  { id: "hound", name: "Houndfang", tiers: [{ count: 2, stats: { crit: 0.02 } }, { count: 3, stats: { atk: 3 } }] },
+  { id: "thornweave", name: "Thornweave", tiers: [{ count: 2, stats: { hp: 20, def: 0.02 } }, { count: 3, stats: { atk: 3, crit: 0.02 } }] },
+];
+/** Item name -> set id. */
+export const GEAR_SET_OF: Record<string, string> = {
+  "Wanderer's Jian": "wanderer", "Wanderer's Brush": "wanderer", "Wanderer's Needle Case": "wanderer", "Wanderer's Dao": "wanderer",
+  "Wanderer's Hat": "wanderer", "Wanderer's Robe": "wanderer", "Wanderer's Sandals": "wanderer",
+  "Bamboo Weave Hat": "bamboo", "Bamboo Weave Robe": "bamboo",
+  "Jade Scale Vest": "jade", "Jade Charm": "jade",
+  "Hound-Fang Charm": "hound", "Stone Hound Greaves": "hound",
+  "Houndfang Jian": "hound", "Houndfang Brush": "hound", "Houndfang Needles": "hound", "Houndfang Dao": "hound",
+  "Thornweave Hood": "thornweave", "Thornweave Robe": "thornweave", "Thornweave Boots": "thornweave",
+};
+export const gearSetOf = (item: string) => GEAR_SET_OF[item];
+
+export interface ConsumableDef { name: string; text: string; healPct: number; cure: boolean; qiRestore?: number; buy: number; sell: number }
 /** Potions share one cooldown (`POTION_CD` seconds). */
 export const POTION_CD = 15;
 export const CONSUMABLES: ConsumableDef[] = [
   { name: "Healing Tonic", text: "Drink to restore 40% of your health.", healPct: 0.4, cure: false, buy: 15, sell: 6 },
   { name: "Lotus Antidote", text: "Cures poison and restores 15% of your health.", healPct: 0.15, cure: true, buy: 25, sell: 10 },
+  { name: "Qi Elixir", text: "Drink to restore 50 Qi.", healPct: 0, cure: false, qiRestore: 50, buy: 20, sell: 8 },
 ];
 export const CONSUMABLE_BY_NAME = new Map(CONSUMABLES.map((c) => [c.name, c] as const));
 
@@ -431,6 +690,7 @@ export const MATERIALS: Array<{ name: string; sell: number; text: string }> = [
   { name: "Serpent Gall", sell: 12, text: "Bitter and valuable to alchemists." },
   { name: "Toad Jelly", sell: 3, text: "Clear, springy jelly from a Lotus Toad Warden." },
   { name: "Hound Fang", sell: 6, text: "A grey fang, hard as the foothills." },
+  { name: "Wisp Essence", sell: 5, text: "A cool mote of condensed ink-light shed by a valley spirit." },
 ];
 /** Quest items: cannot be sold. */
 export const QUEST_ITEMS: Array<{ name: string; text: string }> = [
@@ -443,7 +703,7 @@ export const QUEST_ITEMS: Array<{ name: string; text: string }> = [
 /** Everything the client needs to describe an item. */
 export function itemCatalogue(): ItemInfo[] {
   const out: ItemInfo[] = [];
-  for (const g of GEAR) out.push({ name: g.name, kind: "gear", slot: g.slot, rarity: g.rarity, lv: g.lv, cls: g.cls, stats: g.stats, text: g.flavor, sell: g.sell });
+  for (const g of GEAR) out.push({ name: g.name, kind: "gear", slot: g.slot, rarity: g.rarity, lv: g.lv, cls: g.cls, stats: g.stats, set: gearSetOf(g.name), text: g.flavor, sell: g.sell });
   for (const c of CONSUMABLES) out.push({ name: c.name, kind: "consumable", text: c.text, sell: c.sell });
   for (const m of MATERIALS) out.push({ name: m.name, kind: "material", text: m.text, sell: m.sell });
   for (const q of QUEST_ITEMS) out.push({ name: q.name, kind: "quest", text: q.text });
@@ -470,14 +730,21 @@ export const NPC_SVC: NpcSvc[] = [
     "Fine day for honest trade, friend! I buy fangs, fibre and tails, and I sell the tonics to survive collecting them.",
     "Sell me your junk. Buy my tonics. Everybody wins, mostly me.",
   ] },
+  // 0.5.0: Lantern Keeper Mei now gives side quests (the Thorns of the Reed chain) as well as her chat errand.
+  { key: "mei", name: "Lantern Keeper Mei", role: "Keeper of the Lanterns", range: SVC_RANGE, greet: [
+    "Mind the lanterns, dear; the valley has a way of eating light.",
+    "The reeds along the pond's north bank have teeth now. I would not walk them after dark.",
+  ] },
 ];
 export const NPC_KEY_BY_NAME = new Map(NPC_SVC.map((n) => [n.name, n.key] as const));
 
 /** What Peddler Hao sells. */
 export const SHOP: Array<{ item: string; price: number }> = [
-  { item: "Healing Tonic", price: 15 }, { item: "Lotus Antidote", price: 25 },
+  { item: "Healing Tonic", price: 15 }, { item: "Lotus Antidote", price: 25 }, { item: "Qi Elixir", price: 20 },
   { item: "Wanderer's Hat", price: 20 }, { item: "Wanderer's Robe", price: 35 }, { item: "Wanderer's Sandals", price: 20 },
-  { item: "Wanderer's Jian", price: 30 }, { item: "Wanderer's Brush", price: 30 }, { item: "Wanderer's Needle Case", price: 30 },
+  { item: "Wanderer's Jian", price: 30 }, { item: "Wanderer's Brush", price: 30 }, { item: "Wanderer's Needle Case", price: 30 }, { item: "Wanderer's Dao", price: 30 },
+  // 0.5.0: one Thornweave piece on the open market, so the fifth set has a coin-priced path besides the drop and the recipe.
+  { item: "Thornweave Boots", price: 130 },
 ];
 
 /** Artisan Tao's recipes. `byClass` replaces `out` with the class's own weapon. */
@@ -491,7 +758,10 @@ export const RECIPES: RecipeDef[] = [
   { id: "scale_vest", out: "Jade Scale Vest", qty: 1, mats: [{ item: "Jade Scale", qty: 6 }, { item: "Bamboo Fiber", qty: 4 }], coin: 40, jade: 0, lv: 4 },
   { id: "fang_charm", out: "Hound-Fang Charm", qty: 1, mats: [{ item: "Hound Fang", qty: 4 }, { item: "Fox Tail", qty: 2 }], coin: 45, jade: 0, lv: 5 },
   { id: "hound_greaves", out: "Stone Hound Greaves", qty: 1, mats: [{ item: "Hound Fang", qty: 5 }, { item: "Bamboo Fiber", qty: 6 }], coin: 50, jade: 0, lv: 5 },
-  { id: "fang_weapon", out: "Houndfang Jian", qty: 1, byClass: { sword: "Houndfang Jian", talisman: "Houndfang Brush", physician: "Houndfang Needles" }, mats: [{ item: "Hound Fang", qty: 6 }, { item: "Jade Scale", qty: 2 }], coin: 60, jade: 0, lv: 5 },
+  { id: "fang_weapon", out: "Houndfang Jian", qty: 1, byClass: { sword: "Houndfang Jian", talisman: "Houndfang Brush", physician: "Houndfang Needles", blade: "Houndfang Dao" }, mats: [{ item: "Hound Fang", qty: 6 }, { item: "Jade Scale", qty: 2 }], coin: 60, jade: 0, lv: 5 },
+  { id: "wisp_lantern", out: "Wisp Lantern", qty: 1, mats: [{ item: "Wisp Essence", qty: 3 }, { item: "Bamboo Fiber", qty: 4 }], coin: 40, jade: 0, lv: 5 },
+  { id: "qi_elixir", out: "Qi Elixir", qty: 2, mats: [{ item: "Wisp Essence", qty: 2 }, { item: "Bamboo Fiber", qty: 2 }], coin: 10, jade: 0, lv: 4 },
+  { id: "thornweave_robe", out: "Thornweave Robe", qty: 1, mats: [{ item: "Bamboo Fiber", qty: 10 }, { item: "Toad Jelly", qty: 3 }, { item: "Serpent Gall", qty: 1 }], coin: 55, jade: 0, lv: 6 },
   { id: "guardian_heart", out: "Guardian's Heart", qty: 1, mats: [{ item: "Guardian Core", qty: 1 }, { item: "Jade Scale", qty: 4 }, { item: "Hound Fang", qty: 4 }], coin: 150, jade: 3, lv: 8 },
 ];
 export const RECIPE_BY_ID = new Map(RECIPES.map((r) => [r.id, r] as const));
@@ -531,7 +801,7 @@ export const SIDE_QUESTS: SideQuestDef[] = [
     reminder: "Elder Lin, Lantern Keeper Mei and Notice Board Keeper Fen. All three stand within the plaza. A traveller who knows no one has no one to run to.",
     done: "Good. Now you know where to run. Take this; every wanderer should carry something that cuts, paints or heals.",
     obj: [{ kind: "talk", npc: "elder", text: "Speak with Elder Lin" }, { kind: "talk", npc: "mei", text: "Speak with Lantern Keeper Mei" }, { kind: "talk", npc: "fen", text: "Speak with Notice Board Keeper Fen" }],
-    rewardXp: 80, rewardCoin: 15, rewardByClass: { sword: "Wanderer's Jian", talisman: "Wanderer's Brush", physician: "Wanderer's Needle Case" },
+    rewardXp: 80, rewardCoin: 15, rewardByClass: { sword: "Wanderer's Jian", talisman: "Wanderer's Brush", physician: "Wanderer's Needle Case", blade: "Wanderer's Dao" },
   },
   {
     id: "tao_start", npc: "tao", title: "A Smith's First Lesson", minLv: 2, requires: ["wu_path"],
@@ -566,6 +836,14 @@ export const SIDE_QUESTS: SideQuestDef[] = [
     rewardXp: 340, rewardCoin: 90, rewardItems: [{ item: "Lotus Antidote", qty: 2 }],
   },
   {
+    id: "hao_wisps", npc: "hao", title: "Wisps of the Hollow", minLv: 4,
+    intro: "South of the pond, where the mist never lifts, little lights drift where no lantern burns. Ink Wisps. Skittish, fast, and they shed a cold essence when they fade. Clear out 4 of them and bring me 2 of their essence. Light keeps the masks away, and I pay well for things that keep the dark at bay.",
+    reminder: "Four Ink Wisps and two Wisp Essence, in the misty hollow south-west of the pond. They lash with a strip of ink; sidestep the wind-up.",
+    done: "Cold light in a jar. The masks hate it. Take this; a lantern to carry your own light.",
+    obj: [{ kind: "kill", target: "ink_wisp", count: 4, text: "Defeat Ink Wisps" }, { kind: "collect", item: "Wisp Essence", count: 2, consume: true }],
+    rewardXp: 260, rewardCoin: 50, rewardItems: [{ item: "Wisp Lantern", qty: 1 }],
+  },
+  {
     id: "wu_fox", npc: "wu", title: "The Grey Fox", minLv: 5, requires: ["wu_masks"],
     intro: "Old Whisker, the grey fox of the hills, is older than the Gate. Travellers say a masked man was seen carrying something to his den. Find him in the fox hills and put him down. He is five times the fox of any other; bring friends. He bites in a wide arc: stay behind him or dodge-roll with Space.",
     reminder: "Old Whisker roams the fox hills, east of the valley. If he is not there, he is resting; the hills are his for twenty minutes at a time.",
@@ -587,13 +865,81 @@ export const SIDE_QUESTS: SideQuestDef[] = [
     reminder: "The Stone Guardian waits at the ruined shrine, far to the north. Bring me its core. It will not be easy alone. Leave every glowing ring before it strikes.",
     done: "Its core, whole. The sect will not have it. You have done the valley, and an old man at a gate, a great service. This blade is the best thing I own. It is yours.",
     obj: [{ kind: "collect", item: "Guardian Core", count: 1, consume: true }],
-    rewardXp: 1200, rewardCoin: 150, rewardJade: 5, rewardByClass: { sword: "Cloudpiercer Jian", talisman: "Cloudpiercer Brush", physician: "Cloudpiercer Needles" }, rewardTitle: "Keeper of the Gate",
+    rewardXp: 1200, rewardCoin: 150, rewardJade: 5, rewardByClass: { sword: "Cloudpiercer Jian", talisman: "Cloudpiercer Brush", physician: "Cloudpiercer Needles", blade: "Cloudpiercer Dao" }, rewardTitle: "Keeper of the Gate",
+  },
+  {
+    id: "wu_warden", npc: "wu", title: "The Mist Ward", minLv: 8, requires: ["wu_finale"],
+    intro: "You have silenced the Guardian. But the seal it kept has a second warden: a thing of mist and old stone that walks the south-east hollow. The Hollow Sect has poisoned its purpose. Put it down before it turns on the valley. It is faster than the Guardian, and its rings come quicker.",
+    reminder: "The Mist Warden waits in the south-east hollow. It is fast; leave its glowing rings and run around its sweeping beam.",
+    done: "The second ward is quiet. You have done what the Gate could not, twice over. Take this, Mistbreaker; the valley will remember.",
+    obj: [{ kind: "kill", target: "mist_warden", count: 1, text: "Defeat the Mist Warden" }],
+    rewardXp: 1800, rewardCoin: 200, rewardJade: 4, rewardItems: [{ item: "Wisp Lantern", qty: 1 }], rewardTitle: "Mistbreaker",
+  },
+  // ---- 0.5.0: Thorns of the Reed, Lantern Keeper Mei's three-step side-quest chain. A linear chain: each step requires the one
+  // before it and opens one level higher. Step 1 uses the Bamboo Fiber and Serpent Gall drops, step 2 the new Thorn Sprites, and
+  // step 3 turns the sprites' own fibre into Mei's ward for a gear reward and a title (titles are collected into ALL_TITLES via QUEST_TITLES).
+  {
+    id: "mei_reeds", npc: "mei", title: "Thorns in the Reeds", minLv: 4,
+    intro: "The reed banks north of the pond have gone sour. Thorn Sprites have rooted in them, and their thorns scratch at my lantern glass every night. Bring me 4 Bamboo Fiber to re-wick the plaza lanterns, and 3 Serpent Gall from the Jade Serpents for a bitter wash the thorns will not cross. The serpents coil before they strike; the sprites will leave you alone until you strike first.",
+    reminder: "Four Bamboo Fiber from the bamboo spirits in the western grove, three Serpent Gall from the Jade Serpents around the pond. The gall is rare; keep at it. The serpents coil before they strike.",
+    done: "Bamboo for wicks, and gall bitter enough to burn. The lanterns will hold the dark off another season. Here is your share.",
+    obj: [{ kind: "collect", item: "Bamboo Fiber", count: 4, consume: true }, { kind: "collect", item: "Serpent Gall", count: 3, consume: true }],
+    rewardXp: 320, rewardCoin: 45, rewardItems: [{ item: "Healing Tonic", qty: 2 }],
+  },
+  {
+    id: "mei_sprites", npc: "mei", title: "The Sprite's Heart", minLv: 5, requires: ["mei_reeds"],
+    intro: "The wash has kept them off the lanterns, but the sprites are still nested in the reeds along the north bank, and no one can walk the towpath without a thorn in the leg. Defeat 6 Thorn Sprites for me. They keep their distance and spit a thorn down a straight line: step out of the line before it lands. They will not stir until you strike first.",
+    reminder: "Six Thorn Sprites, on the rise along the pond's north bank. They spit a thorn down a straight line; sidestep the wind-up and close the distance. They leave you alone until you strike first.",
+    done: "So the reeds are quiet again. They left a knot of thorn-fibre behind, tough as wire. I can bind a ward from that, but I will need more.",
+    obj: [{ kind: "kill", target: "thorn_sprite", count: 6, text: "Defeat Thorn Sprites" }],
+    rewardXp: 440, rewardCoin: 65, rewardItems: [{ item: "Qi Elixir", qty: 2 }],
+  },
+  {
+    id: "mei_warden", npc: "mei", title: "Reedwarden", minLv: 6, requires: ["mei_sprites"],
+    intro: "Two more lengths of Bamboo Fiber and the ward is done: I will bind the sprites' thorn-fibre around a reed frame and set it in the banks, and they will not root there again. Bring me 2 Bamboo Fiber. Then I will name you what you have become: Reedwarden of the pond.",
+    reminder: "Two Bamboo Fiber, dear. The bamboo spirits in the western grove carry it, and the sprites shed it. Then I can bind the ward.",
+    done: "There: the frame is set, the thorns hold, and the reeds are quiet. Take this lantern; it does not blow out in the wet, and its light does not flinch. When the valley asks who kept the reeds, tell them: Reedwarden.",
+    obj: [{ kind: "collect", item: "Bamboo Fiber", count: 2, consume: true }],
+    rewardXp: 700, rewardCoin: 100, rewardJade: 2, rewardItems: [{ item: "Wisp Lantern", qty: 1 }], rewardTitle: "Reedwarden",
+  },
+  // ---- 0.5.0: the Forge-Sworn chain, Artisan Tao's three-step commission. A linear chain like Thorns of the Reed: step 1 is a
+  // kill trial against the Stone Hound packs (never a side-quest kill target before), step 2 gathers fang-iron and quench jelly,
+  // and step 3 sets the temper with cold wisp light for a Hound-Fang Charm and a new title (titles flow into ALL_TITLES via QUEST_TITLES).
+  {
+    id: "tao_hounds", npc: "tao", title: "Sparks in the Foothills", minLv: 5,
+    intro: "I have promised the Gate Warden a charm that turns a hound's bite, and I will not sell him an untested one. Take a blade into the northern foothills and put down 8 Stone Hounds. I want to see how the pack fights before I set the fang-iron: they run in threes, so strike one and its packmates come, and their bite sweeps a cone in front of them. Step out of the cone, not through it.",
+    reminder: "Eight Stone Hounds in the northern foothills, towards the shrine. They hunt in threes; pull one and the pack follows. Their bite is a cone; step out of it and strike from the side.",
+    done: "Eight, and you are still standing. The pack bites as one, so the charm must answer a whole cone, not a single set of teeth. Now I need the fangs.",
+    obj: [{ kind: "kill", target: "stone_hound", count: 8, text: "Defeat Stone Hounds" }],
+    rewardXp: 380, rewardCoin: 70, rewardItems: [{ item: "Healing Tonic", qty: 2 }],
+  },
+  {
+    id: "tao_quench", npc: "tao", title: "The Quenching Bath", minLv: 6, requires: ["tao_hounds"],
+    intro: "Fang-iron takes a careful quench. Bring me 4 Hound Fang for the charm's teeth and 3 Toad Jelly from the Lotus Toad Wardens to fill the bath; the jelly keeps the temper even and stops the fang-iron from cracking. The toads leave you be until you strike them, and their spit comes down a straight line. Step out of the line before it lands.",
+    reminder: "Four Hound Fang and three Toad Jelly. Hounds on the northern foothills, toads along the pond shore. Step out of the toads' spit line.",
+    done: "Fang and jelly, and the bath is ready. The charm will hold a bite off now. One last thing: the temper needs cold wisp light to set.",
+    obj: [{ kind: "collect", item: "Hound Fang", count: 4, consume: true }, { kind: "collect", item: "Toad Jelly", count: 3, consume: true }],
+    rewardXp: 520, rewardCoin: 90, rewardItems: [{ item: "Lotus Antidote", qty: 2 }],
+  },
+  {
+    id: "tao_oath", npc: "tao", title: "The Whetstone Oath", minLv: 7, requires: ["tao_quench"],
+    intro: "Last of it. Bring me 2 Wisp Essence from the Ink Wisps in the misty south hollow: cold light set in fang-iron keeps a charm from going dull in the wet, and I do not forge dull work. The wisps lash a line of ink before they strike; stay off the line. Then the charm is yours, and I will put a smith's name to it: Forge-Sworn.",
+    reminder: "Two Wisp Essence, from the Ink Wisps drifting in the misty hollow south of the pond. They lash a line of ink; stay off the line.",
+    done: "There it is: hound's tooth, toad's jelly, wisp's cold light, all holding together. Wear it, Forge-Sworn. The valley will know the smith who armed you.",
+    obj: [{ kind: "collect", item: "Wisp Essence", count: 2, consume: true }],
+    rewardXp: 800, rewardCoin: 150, rewardJade: 3, rewardItems: [{ item: "Hound-Fang Charm", qty: 1 }], rewardTitle: "Forge-Sworn",
   },
 ];
 export const SIDE_QUEST_BY_ID = new Map(SIDE_QUESTS.map((q) => [q.id, q] as const));
 
 // ---------------- Merit seals (achievements) and titles ----------------
-/** counter keys: `kills` (all), `kill:<mobType>`, `talk:<npc>` (0/1 each), `talked` (distinct npcs), `craft`, `poi` (places found), `quest` (side quests done), `lv` (highest level), `equipped` (slots filled), `rare` (rare+ items worn), `chain` (Elder Lin's chain done), `boss` (guardians slain) */
+/** counter keys, all produced by `server/src/game/content.ts` (or the economy/quest systems it hooks into):
+ *  `kills` (all), `kill:<mobType>`, `best:<mobType>` (bestiary kills), `bestTypes` (mob types discovered),
+ *  `bosses` (distinct bosses defeated), `tideKills` (kills during a Lantern Tide), `talk:<npc>` (0/1 each),
+ *  `talked` (distinct npcs), `greet:<npc>` (greeting lines heard), `craft`, `poi` (places found), `quest` (side
+ *  quests done), `lv` (highest level), `equipped` (slots filled), `rare` (rare+ items worn), `set:<setId>` (worn
+ *  pieces of a set), `setsDone` (complete sets worn), `chain` (Elder Lin's chain done). `ACHIEVEMENTS` is validated
+ *  against the real counter set by the content test. */
 export interface AchDef { id: string; name: string; desc: string; cat: "Combat" | "Exploration" | "Story" | "Craft"; pts: number; counter: string; need: number; title?: string }
 export const ACHIEVEMENTS: AchDef[] = [
   { id: "first_blood", name: "First Blood", desc: "Defeat your first spirit.", cat: "Combat", pts: 5, counter: "kills", need: 1 },
@@ -610,12 +956,25 @@ export const ACHIEVEMENTS: AchDef[] = [
   { id: "talk_all", name: "Know Your Neighbours", desc: "Speak with all six people of the plaza.", cat: "Story", pts: 10, counter: "talked", need: 6 },
   { id: "valley_hero", name: "Hero of the Valley", desc: "Finish all of Elder Lin's tasks.", cat: "Story", pts: 20, counter: "chain", need: 1, title: "Hero of the Valley" },
   { id: "side_3", name: "Helping Hand", desc: "Finish 3 side quests.", cat: "Story", pts: 10, counter: "quest", need: 3 },
-  { id: "side_8", name: "Friend of the Plaza", desc: "Finish all 8 side quests.", cat: "Story", pts: 25, counter: "quest", need: 8, title: "Friend of the Plaza" },
+  { id: "side_8", name: "Friend of the Plaza", desc: "Finish 8 side quests.", cat: "Story", pts: 25, counter: "quest", need: 8, title: "Friend of the Plaza" },
   { id: "wanderer", name: "Wanderer", desc: "Discover 3 places of interest.", cat: "Exploration", pts: 10, counter: "poi", need: 3 },
   { id: "cartographer", name: "Cartographer", desc: "Discover all 6 places of interest.", cat: "Exploration", pts: 20, counter: "poi", need: 6, title: "Cartographer" },
   { id: "apprentice", name: "Apprentice Smith", desc: "Craft 5 items with Artisan Tao.", cat: "Craft", pts: 10, counter: "craft", need: 5, title: "Apprentice Smith" },
   { id: "well_dressed", name: "Well Dressed", desc: "Fill all six equipment slots.", cat: "Craft", pts: 15, counter: "equipped", need: 6 },
   { id: "rare_find", name: "A Rare Find", desc: "Wear a rare or epic item.", cat: "Craft", pts: 10, counter: "rare", need: 1 },
+  // ---- 0.6.0: goals tied to the systems added since the first collection (bestiary, the three bosses, the Lantern
+  // Tide, gear sets, deeper crafting, the full side-quest chain and the cultivation realms). Needs that mirror a data
+  // size (mob types, bosses, side quests, set pieces, rare/epic slots) are derived from the data so they cannot drift.
+  { id: "codex_complete", name: "Codex Complete", desc: "Discover every mob type in the Bestiary.", cat: "Exploration", pts: 25, counter: "bestTypes", need: (Object.keys(MOBS) as MobType[]).length, title: "Keeper of the Codex" },
+  { id: "three_wards", name: "Warden of the Valley", desc: "Defeat every valley boss.", cat: "Combat", pts: 25, counter: "bosses", need: (Object.keys(MOBS) as MobType[]).filter((t) => MOBS[t].boss).length, title: "Wardbreaker" },
+  { id: "valley_veteran", name: "Valley Veteran", desc: "Defeat 150 spirits in the valley.", cat: "Combat", pts: 15, counter: "kills", need: 150, title: "Valley Veteran" },
+  { id: "tide_rider", name: "Tide Rider", desc: "Defeat 20 spirits while a Lantern Tide is running.", cat: "Combat", pts: 10, counter: "tideKills", need: 20 },
+  { id: "master_smith", name: "Master Smith", desc: "Craft 25 items with Artisan Tao.", cat: "Craft", pts: 15, counter: "craft", need: 25, title: "Master Smith" },
+  { id: "adorned", name: "The Adorned", desc: "Wear rare or epic gear in four slots at once.", cat: "Craft", pts: 15, counter: "rare", need: new Set(GEAR.filter((g) => g.rarity === "rare" || g.rarity === "epic").map((g) => g.slot)).size, title: "The Adorned" },
+  { id: "thornweave_adept", name: "Thornweave Adept", desc: "Wear all three Thornweave pieces at once.", cat: "Craft", pts: 10, counter: "set:thornweave", need: Object.values(GEAR_SET_OF).filter((s) => s === "thornweave").length, title: "Thornweave Adept" },
+  { id: "set_collector", name: "Set Collector", desc: "Wear every piece of any one equipment set at once.", cat: "Craft", pts: 5, counter: "setsDone", need: 1 },
+  { id: "side_all", name: "Friend of the Valley", desc: "Finish every side quest.", cat: "Story", pts: 25, counter: "quest", need: SIDE_QUESTS.length, title: "Friend of the Valley" },
+  { id: "nascent_soul", name: "Nascent Soul", desc: "Reach level 15, the Nascent Soul realm.", cat: "Story", pts: 15, counter: "lv", need: 15, title: "Nascent Soul" },
 ];
 export const ACH_BY_ID = new Map(ACHIEVEMENTS.map((a) => [a.id, a] as const));
 /** Titles that quests grant (achievement titles come from ACHIEVEMENTS). */

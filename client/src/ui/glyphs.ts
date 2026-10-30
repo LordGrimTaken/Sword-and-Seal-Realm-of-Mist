@@ -4,6 +4,7 @@ export const CLASS_INFO: Record<ClassId, { en: string; desc: string }> = {
   sword: { en: "Sword Cultivator", desc: "Melee. Cuts through foes with flowing steel and sword qi." },
   talisman: { en: "Talisman Master", desc: "Ranged. Hurls fire, frost and thunder from inked paper." },
   physician: { en: "Physician", desc: "Support. Mends allies with jade needles and spring rain." },
+  blade: { en: "Blade Dancer", desc: "Melee skirmisher. Fast, critical strikes and whirlwind bursts." },
 };
 
 const cp = (n: number) => String.fromCharCode(n);

@@ -246,7 +246,7 @@ const serverLog: string[] = [];
 async function startServer() {
   if (process.env.SOAK_URL) return;
   tmp = mkdtempSync(join(tmpdir(), "jiuzhou-soak-"));
-  child = spawn(join(ROOT, "node_modules/.bin/tsx"), ["src/server.ts"], {
+  child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], {
     cwd: ROOT, env: { ...process.env, PORT: String(PORT), DB_PATH: join(tmp, "soak.db"), NODE_NO_WARNINGS: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });

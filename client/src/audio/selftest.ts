@@ -22,7 +22,7 @@ function jobs(): Job[] {
     j.push({ name: `ui.${k}`, secs: 1, run: (s, t) => s.ui(k, t) });
   // the four click variants each get rendered (the counter advances per call)
   j.push({ name: "ui.click.x4", secs: 1.5, run: (s, t) => { for (let i = 0; i < 4; i++) s.ui("click", t + i * 0.25); } });
-  for (const cls of ["sword", "talisman", "physician"] as const)
+  for (const cls of ["sword", "talisman", "physician", "blade"] as const)
     for (let sk = 1; sk <= 4; sk++) j.push({ name: `cast.${cls}.${sk}`, secs: 3, run: (s, t) => s.cast(sk, cls, t) });
   j.push({ name: "hit", secs: 1, run: (s, t) => s.hit(false, t) });
   j.push({ name: "hit.crit", secs: 2, run: (s, t) => s.hit(true, t) });
@@ -72,7 +72,7 @@ export async function runSelfTest(): Promise<SelfTestRow[]> {
       for (let i = 0; i < 60; i++) {
         const t = 0.02 + i * 0.016;
         s.hit(i % 3 === 0, t);
-        if (i % 4 === 0) s.cast((i % 4) + 1, (["sword", "talisman", "physician"] as const)[i % 3], t);
+        if (i % 4 === 0) s.cast((i % 4) + 1, (["sword", "talisman", "physician", "blade"] as const)[i % 4], t);
       }
       s.bossRoar(0.1);
       s.levelUp(0.2);

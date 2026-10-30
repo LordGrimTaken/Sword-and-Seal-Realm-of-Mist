@@ -1,9 +1,25 @@
-import { MOBS, MOB_SPAWNS, TUNING, ZONE } from "../data.ts";
-import { applyPoison, enrageMult, hurtPlayer, mobAttack } from "./combat.ts";
+import { MOBS, MOB_SPAWNS, TUNING, ZONE, veilPhaseAt, type MobDef, type VeilPhase } from "../data.ts";
+import { applyPoison, burnTick, enrageMult, hurtPlayer, mobAttack } from "./combat.ts";
 import { telegraphContains, type GameEvent } from "../../../shared/protocol.ts";
 import type { Mob, Player } from "./types.ts";
 import type { World } from "./world.ts";
 import { clamp, dist, mulberry32, rand } from "./util.ts";
+
+/** Build one mob from its definition. Shared by the initial spawn pass and by boss summons (0.5.0). */
+function makeMob(world: World, def: MobDef, x: number, z: number, lv: number, r = 0): Mob {
+  const hp = def.hpBase + def.hpPerLv * lv;
+  const m: Mob = {
+    id: 0, k: "mob", n: def.name, x, z, r, hp, mhp: hp, lv, st: "idle",
+    visible: true, state: { id: 0, k: "mob", n: def.name, x, z, r, hp, mhp: hp, lv, mob: def.type, st: "idle" },
+    def, spawnX: x, spawnZ: z, ai: "idle", threat: new Map(), target: 0, nextAttack: 0, attackUntil: 0,
+    slowUntil: 0, slowMult: 1, burnUntil: 0, burnNext: 0, burnDmg: 0, burnSrc: 0, burnEvery: 0, wanderX: x, wanderZ: z, wanderAt: rand(0, 5), deadAt: 0, respawnAt: 0,
+    windupUntil: 0, windupTarget: 0, windupX: 0, windupZ: 0,
+    boss: def.boss ? { engagedAt: 0, nextSlam: 0, nextSummon: 0, patternIdx: 0, rr: 0, phase2: false, phase3: false, enraged: false, pending: [] } : undefined,
+  };
+  m.id = world.allocId();
+  m.state.id = m.id;
+  return m;
+}
 
 export function spawnMobs(world: World): Mob[] {
   const rng = mulberry32(0x9e3779b9);
@@ -22,17 +38,7 @@ export function spawnMobs(world: World): Mob[] {
       }
       if (!g.points) placed.push([x, z]);
       const lv = g.lv[0] + (i % (g.lv[1] - g.lv[0] + 1));
-      const hp = def.hpBase + def.hpPerLv * lv;
-      const m: Mob = {
-        id: world.allocId(), k: "mob", n: def.name, x, z, r: rng() * Math.PI * 2, hp, mhp: hp, lv, st: "idle",
-        visible: true, state: { id: 0, k: "mob", n: def.name, x, z, r: 0, hp, mhp: hp, lv, mob: def.type, st: "idle" },
-        def, spawnX: x, spawnZ: z, ai: "idle", threat: new Map(), target: 0, nextAttack: 0, attackUntil: 0,
-        slowUntil: 0, slowMult: 1, wanderX: x, wanderZ: z, wanderAt: rand(0, 5), deadAt: 0, respawnAt: 0,
-        windupUntil: 0, windupTarget: 0, windupX: 0, windupZ: 0,
-        boss: def.boss ? { engagedAt: 0, nextSlam: 0, patternIdx: 0, rr: 0, phase2: false, phase3: false, enraged: false, pending: [] } : undefined,
-      };
-      m.state.id = m.id;
-      out.push(m);
+      out.push(makeMob(world, def, x, z, lv, rng() * Math.PI * 2));
     }
   }
   return out;
@@ -78,10 +84,69 @@ function findAggro(world: World, m: Mob): Player | undefined {
   return best;
 }
 
-// ---------------- Stone Guardian boss mechanics ----------------
-function bossReset(m: Mob) {
+// ---------------- boss mechanics (shared by every MobDef with a `boss` config) ----------------
+// 0.5.0 summon-adds: hard cap on living adds per boss fight (3 waves of 2). Past the cap a wave is skipped, so a long or
+// stalemated fight can never accumulate an army; everything the boss called is removed when it dies or leashes.
+const SUMMON_CAP = 6;
+/** Seconds between a summon's death and its corpse being removed (it never respawns - adds are temporary by design). */
+const SUMMON_CORPSE = 3;
+
+/** Remove every summoned add of `boss` from the world at once (boss died / leashed / reset). */
+function despawnAdds(world: World, boss: Mob) {
+  for (let i = world.mobs.length - 1; i >= 0; i--) { // backwards: never disturbs the world's forward update loop
+    const o = world.mobs[i];
+    if (o.summonedBy !== boss.id) continue;
+    world.mobs.splice(i, 1);
+    world.entities.delete(o.id);
+    o.visible = false;
+  }
+}
+
+/** Drop the corpses of adds that have finished dissolving. Called from the boss's own tick (its index is below every add's). */
+function pruneAdds(world: World, boss: Mob) {
+  const now = world.time;
+  for (let i = world.mobs.length - 1; i >= 0; i--) {
+    const o = world.mobs[i];
+    if (o.summonedBy !== boss.id || o.ai !== "dead" || now < o.deadAt + SUMMON_CORPSE) continue;
+    world.mobs.splice(i, 1);
+    world.entities.delete(o.id);
+  }
+}
+
+/** Keep the boss's living summons in the fight: an add that leashed home re-joins as soon as the boss's target is back in its reach. */
+function commandAdds(world: World, boss: Mob, t: Player) {
+  for (const o of world.mobs) {
+    if (o.summonedBy !== boss.id || o.ai !== "idle") continue;
+    if (dist(t.x, t.z, o.spawnX, o.spawnZ) > o.def.leash) continue;
+    o.ai = "chase"; o.target = t.id; o.threat.set(t.id, (o.threat.get(t.id) ?? 0) + 1);
+  }
+}
+
+/** The signature mechanic: call `summon.count` minions of `summon.type` on a ring beside the boss, already fighting its target. */
+function summonAdds(world: World, m: Mob) {
+  const sm = m.def.boss!.summon!;
+  const living = world.mobs.reduce((n, o) => n + (o.summonedBy === m.id && o.ai !== "dead" ? 1 : 0), 0);
+  if (living + sm.count > SUMMON_CAP) return; // capped: skip this wave, the timer still advances
+  const def = MOBS[sm.type];
+  const base = rand(0, Math.PI * 2);
+  for (let i = 0; i < sm.count; i++) {
+    const a = base + (i / sm.count) * Math.PI * 2 + rand(-0.3, 0.3);
+    const d = rand(2.8, 4.4); // "beside itself": a ring just outside the boss's melee
+    const add = makeMob(world, def, clamp(m.x + Math.cos(a) * d, -world.half, world.half), clamp(m.z + Math.sin(a) * d, -world.half, world.half), m.lv, a);
+    add.summonedBy = m.id;
+    add.ai = "chase"; add.target = m.target;
+    for (const [pid, t] of m.threat) add.threat.set(pid, t); // the adds join the fight that is already happening
+    world.mobs.push(add);
+    world.entities.set(add.id, add);
+  }
+  world.emitNear(m.x, m.z, { k: "chat", from: "System", text: `${m.def.name} summons ${sm.count} ${def.name}${sm.count === 1 ? "" : "s"}!`, sys: true });
+}
+
+function bossReset(world: World, m: Mob) {
   const b = m.boss!;
-  b.engagedAt = 0; b.pending.length = 0; b.phase2 = false; b.phase3 = false; b.beam = undefined; b.enraged = false; b.patternIdx = 0;
+  b.engagedAt = 0; b.pending.length = 0; b.phase2 = false; b.phase3 = false; b.beam = undefined; b.enraged = false; b.patternIdx = 0; b.nextSummon = 0;
+  if (m.def.boss!.veil) { b.rr = 0; b.nextSlam = 0; m.state.veiled = false; } // 0.5.0 veil boss: a reset fight starts over in the veil
+  if (m.def.boss!.summon) despawnAdds(world, m); // a resetting boss does not leave its summons behind
 }
 
 function emitTelegraph(world: World, m: Mob, x: number, z: number, radius: number, delay: number, dmg: number) {
@@ -137,7 +202,7 @@ function bossResolve(world: World, m: Mob) {
 
 function bossFight(world: World, m: Mob) {
   const b = m.boss!, bd = m.def.boss!, now = world.time;
-  if (!b.engagedAt) { b.engagedAt = now; b.nextSlam = now + bd.firstSlam; }
+  if (!b.engagedAt) { b.engagedAt = now; b.nextSlam = now + bd.firstSlam; if (bd.summon) b.nextSummon = now + bd.summon.every; }
   if (!b.phase2 && m.hp / m.mhp < bd.phase2At) {
     b.phase2 = true;
     b.nextSlam = Math.min(b.nextSlam, now + 1.5); b.patternIdx = 1; // the new pattern (scatter) comes right away, so phase 2 is felt even by fast kills
@@ -151,6 +216,12 @@ function bossFight(world: World, m: Mob) {
   if (!b.enraged && now - b.engagedAt > bd.enrageAfter) {
     b.enraged = true;
     world.emitNear(m.x, m.z, { k: "chat", from: "System", text: `${m.def.name} is enraged!`, sys: true });
+  }
+  if (bd.summon) { // 0.5.0: keep the adds fighting, clear finished corpses, then call the next wave when the timer says so
+    const t = world.players.get(m.target);
+    if (t && t.st !== "dead") commandAdds(world, m, t);
+    pruneAdds(world, m);
+    if (now >= b.nextSummon) { summonAdds(world, m); b.nextSummon = now + bd.summon.every; }
   }
   if (now < b.nextSlam) return;
   const cands: Player[] = [];
@@ -174,6 +245,50 @@ function bossFight(world: World, m: Mob) {
   const gap = b.phase2 ? bd.slamEvery2 : rand(bd.slamEvery[0], bd.slamEvery[1]);
   b.nextSlam = now + gap * (b.enraged ? 0.75 : 1);
   if (pat === "beam") b.nextSlam = Math.max(b.nextSlam, now + bd.beam.lead + bd.beam.sweepTime + 2.5); // never stack another pattern on a running beam
+}
+
+// ---------------- 0.5.0 The Hollow Bride: VEILED / REVEALED rhythm ----------------
+/**
+ * The Hollow Bride's encounter script. Unlike the other bosses she does not use the pattern rotation: `veilPhaseAt` derives
+ * VEILED/REVEALED deterministically from (world.time - engagedAt), and this function only handles what that formula cannot
+ * express: the one-shot transition announcements, the drift re-targeting while veiled and the lash timer. Damage immunity is
+ * applied in combat.damageMob from the same deterministic phase (server-authoritative, never client-driven); movement speed,
+ * the swing (lash, VEILED only) and the melee (REVEALED only) are gated in updateMob from the phase computed there.
+ */
+function brideFight(world: World, m: Mob, now: number) {
+  const b = m.boss!, bd = m.def.boss!, v = bd.veil!;
+  if (!b.engagedAt) {
+    b.engagedAt = now;
+    b.patternIdx = 0; // announced-phase marker: 0 = none yet, 1 = veiled announced, 2 = revealed announced
+    b.nextSlam = now + v.firstLash;
+    b.rr = now + 3.5; // next drift re-target
+  }
+  const phase = veilPhaseAt(now, b.engagedAt, v);
+  const announced = phase === "veiled" ? 1 : 2;
+  if (b.patternIdx !== announced) {
+    b.patternIdx = announced;
+    if (phase === "veiled") {
+      b.nextSlam = now + v.firstLash; // every new veil opens with a readable windup before the first lash
+      b.rr = now + 2.5;
+      world.emitNear(m.x, m.z, { k: "chat", from: "System", text: `${m.def.name} draws her veil tight — strikes pass through her!`, sys: true });
+    } else {
+      world.emitNear(m.x, m.z, { k: "chat", from: "System", text: `${m.def.name}'s veil falls away — strike now!`, sys: true });
+    }
+  }
+  if (phase !== "veiled") return; // REVEALED: normal chase/melee; the lash belongs to the veil
+  // drift toward a player: re-pick a random target in range every few seconds so the drift is visible and can be re-positioned
+  if (now >= b.rr) {
+    b.rr = now + 3.5;
+    const cands: Player[] = [];
+    for (const p of world.players.values()) if (p.st !== "dead" && dist(p.x, p.z, m.x, m.z) <= bd.targetRange) cands.push(p);
+    if (cands.length) {
+      const pick = cands[Math.floor(Math.random() * cands.length)];
+      m.target = pick.id;
+      m.threat.set(pick.id, Math.max(1, m.threat.get(pick.id) ?? 0));
+    }
+  }
+  // kerchief lash: on the lash timer, ready a telegraphed line swing (swingStep does the warning + the hit)
+  if (now >= b.nextSlam) { b.nextSlam = now + v.lashEvery; m.nextAttack = now; }
 }
 
 // ---------------- Fox Spirit bite / Bamboo Spirit smash: ground telegraph, then a hit on everyone still inside ----------------
@@ -237,17 +352,25 @@ export function updateMob(world: World, m: Mob, dt: number) {
   const now = world.time, def = m.def;
   if (m.ai !== "chase" && m.swing) m.swing = undefined;
   if (m.ai === "dead") {
-    if (m.boss) m.boss.beam = undefined;
+    if (m.boss) { m.boss.beam = undefined; if (m.def.boss!.summon) despawnAdds(world, m); } // 0.5.0: a dead boss's summons vanish with it
+    if (def.boss?.veil) m.state.veiled = false; // 0.5.0: a fallen veil boss is not "veiled" any more
     if (m.visible && now >= m.deadAt + 3) m.visible = false;
+    if (m.summonedBy) return; // summoned adds never respawn: the boss prunes the corpse in pruneAdds (no add accumulation)
     if (now >= m.respawnAt) {
       m.x = m.spawnX; m.z = m.spawnZ; m.hp = m.mhp; m.ai = "idle"; m.st = "idle"; m.visible = true;
-      m.threat.clear(); m.target = 0; m.slowUntil = 0; m.windupUntil = 0;
-      if (m.boss) bossReset(m);
+      m.threat.clear(); m.target = 0; m.slowUntil = 0; m.burnUntil = 0; m.windupUntil = 0;
+      if (m.boss) bossReset(world, m);
     }
     return;
   }
   if (m.boss) { bossResolve(world, m); beamTick(world, m); }
-  const speed = def.speed * (now < m.slowUntil ? m.slowMult : 1);
+  burnTick(world, m);
+  if (m.hp <= 0) return; // burn may have finished it this tick (killMob set ai/st to dead)
+  // 0.5.0 veil boss: the phase is a pure function of the sim clock and the engagement time (no stored state machine).
+  const veilDef = def.boss?.veil;
+  let veilPhase: VeilPhase | null = veilDef && m.boss?.engagedAt ? veilPhaseAt(now, m.boss.engagedAt, veilDef) : null;
+  if (veilDef) m.state.veiled = veilPhase === "veiled"; // client readability flag; undefined for every other mob
+  const speed = def.speed * (now < m.slowUntil ? m.slowMult : 1) * (veilPhase === "veiled" && veilDef ? veilDef.driftSpeedMult : 1);
   let moved = false;
 
   if (m.ai === "idle") {
@@ -271,18 +394,27 @@ export function updateMob(world: World, m: Mob, dt: number) {
       t = pickTarget(world, m);
       m.target = t ? t.id : 0;
     }
-    if (!t || dist(m.x, m.z, m.spawnX, m.spawnZ) > def.leash) { m.ai = "return"; m.target = 0; m.threat.clear(); m.windupUntil = 0; if (m.boss) bossReset(m); }
+    if (!t || dist(m.x, m.z, m.spawnX, m.spawnZ) > def.leash) { m.ai = "return"; m.target = 0; m.threat.clear(); m.windupUntil = 0; if (m.boss) bossReset(world, m); }
     else {
-      if (m.boss) bossFight(world, m);
+      if (m.boss) {
+        if (def.boss!.veil) brideFight(world, m, now); // 0.5.0 veil boss: deterministic VEILED/REVEALED rhythm (no pattern rotation)
+        else bossFight(world, m);
+        if (veilDef) { // the engagement may have just started this tick, so re-read the phase after the boss step
+          veilPhase = m.boss.engagedAt ? veilPhaseAt(now, m.boss.engagedAt, veilDef) : null;
+          m.state.veiled = veilPhase === "veiled";
+        }
+      }
       if (def.pack && !m.packCalled) callPack(world, m, t);
       const d = dist(m.x, m.z, t.x, t.z);
       if (m.boss?.beam) { // channelling the rune beam: rooted, turning with the sweep
         m.r = beamAngle(m.boss.beam, now, def.boss!.beam.sweepTime); m.attackUntil = now + 0.3;
       } else if (def.lunge && lungeStep(world, m, t, d)) { /* busy lunging */ }
-      else if (def.swing && swingStep(world, m, t, d)) { /* busy with a telegraphed swing */ }
-      else if (d <= def.attackRange) {
+      else if (def.swing && veilPhase !== "revealed" && swingStep(world, m, t, d)) { /* telegraphed swing: the bride's lash only while VEILED */ }
+      else if (d <= def.attackRange && veilPhase !== "veiled") {
         m.r = Math.atan2(t.x - m.x, t.z - m.z);
         if (now >= m.nextAttack) { m.nextAttack = now + def.attackCd; mobAttack(world, m, t); }
+      } else if (veilPhase === "veiled" && d <= def.attackRange) {
+        m.r = Math.atan2(t.x - m.x, t.z - m.z); // veiled: she sways in place between lashes instead of meleeing
       } else moved = moveToward(world, m, t.x, t.z, speed, dt) > 0;
     }
   }

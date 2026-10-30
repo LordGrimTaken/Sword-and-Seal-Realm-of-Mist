@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { LauncherCore } from "../src/controller.js";
 import { loadNews, normalizeNews } from "../src/news.js";
 import { authenticate, checkHealth } from "../src/auth.js";
@@ -27,7 +28,7 @@ test("news: sorted newest first, normalized, cached for offline use", async () =
 test("config: env overrides and file source", () => {
   const c = loadConfig({ LAUNCHER_RELEASE_URL: "http://r/", LAUNCHER_API_URL: "http://a/", LAUNCHER_SERVER_URL: "ws://s" });
   assert.equal(c.releaseBaseUrl, "http://r"); assert.equal(c.apiBaseUrl, "http://a"); assert.equal(c.gameServerUrl, "ws://s");
-  assert.match(loadConfig({ LAUNCHER_FILE_SOURCE: "/tmp/x" }).releaseBaseUrl, /^file:\/\/\/tmp\/x$/);
+  assert.equal(loadConfig({ LAUNCHER_FILE_SOURCE: "/tmp/x" }).releaseBaseUrl, pathToFileURL(path.resolve("/tmp/x")).href);
   assert.equal(loadConfig({}).launcherUpdate.enabled, true); assert.match(loadConfig({}).launcherUpdate.url, /^https:\/\/dl\.swordandseal\.com\/launcher\/feed$/);
 });
 
@@ -42,10 +43,15 @@ fs.writeFileSync(process.env.STUB_OUT, JSON.stringify({ args: process.argv.slice
   makeRelease(rel, "1.0.0", { ...files, "game/scripts/play.mjs": stub });
   const host = await startDevHost({ dir: rel, port: 0, mockApi: true });
   const base = `http://127.0.0.1:${host.address().port}`;
+  // Windows: defaultInstallDir() uses %LOCALAPPDATA%, which would leak a fake install into the real
+  // profile and make tests non-hermetic. Point it at the per-test temp dir just for construction.
+  const prevLocalAppData = process.env.LOCALAPPDATA;
+  if (process.platform === "win32") process.env.LOCALAPPDATA = ud;
   const core = new LauncherCore({
     config: { ...loadConfig({}), releaseBaseUrl: base, apiBaseUrl: base, gameServerUrl: "ws://game.test:1" },
     userData: ud, launcherVersion: "1.0.0", tmpDir,
   });
+  if (process.platform === "win32") { if (prevLocalAppData === undefined) delete process.env.LOCALAPPDATA; else process.env.LOCALAPPDATA = prevLocalAppData; }
   return { core, host, rel, ud, tmpDir, base, close: () => new Promise((r) => { host.closeAllConnections?.(); host.close(r); }) };
 }
 

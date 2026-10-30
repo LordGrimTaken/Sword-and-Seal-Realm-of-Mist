@@ -1,4 +1,4 @@
-// Ambient life: drifting mist wisps, falling petals/leaves, lantern halos, boss rune ring.
+﻿// Ambient life: drifting mist wisps, falling petals/leaves, lantern halos, boss rune ring.
 import * as THREE from "three";
 import { mulberry32 } from "./noise";
 import { terrainHeight } from "./terrain";
@@ -7,15 +7,15 @@ import { SUN_DIR } from "./sky";
 import type { Tone } from "./daynight";
 import { POND, WATER_Y, GROVE } from "./terrain";
 
-export interface AmbientOut { group: THREE.Group; update(t: number, cam: THREE.Vector3, vpHeight: number): void; setTone(tone: Tone): void; }
+export interface AmbientOut { group: THREE.Group; update(t: number, cam: THREE.Vector3, vpHeight: number, heavyMist?: number): void; setTone(tone: Tone): void; }
 
 function pointsMaterial(frag: string, extra: Record<string, THREE.IUniform>, vertBody: string, blending: THREE.Blending = THREE.NormalBlending): THREE.ShaderMaterial {
-  const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uPx: { value: 600 }, uLamp: { value: 0 }, uNight: { value: 0 } }, extra]);
+  const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uPx: { value: 600 }, uLamp: { value: 0 }, uNight: { value: 0 }, uWx: { value: 0 } }, extra]);
   return new THREE.ShaderMaterial({
     uniforms, fog: true, transparent: true, depthWrite: false, blending,
     vertexShader: `
       attribute vec4 aSeed; attribute vec3 color;
-      uniform float uTime; uniform vec3 uCam; uniform float uPx; uniform float uLamp; uniform float uNight;
+      uniform float uTime; uniform vec3 uCam; uniform float uPx; uniform float uLamp; uniform float uNight; uniform float uWx;
       varying vec3 vCol; varying float vA; varying float vRot;
       #include <common>
       #include <fog_pars_vertex>
@@ -71,7 +71,7 @@ export function buildAmbient(lanterns: THREE.Vector3[], extras: AmbientExtras = 
        wp.y += sin(uTime * 0.2 + aSeed.y * 9.0) * 0.8;
        size = 22.0 + aSeed.z * 24.0;
        float edge = 1.0 - smoothstep(80.0, 110.0, abs(wp.x));
-       alpha = 0.19 * (0.5 + aSeed.w * 0.5) * edge;`,
+       alpha = 0.19 * (0.5 + aSeed.w * 0.5) * edge * (1.0 + 0.85 * uWx);`,
     );
     const p = new THREE.Points(g, m);
     p.frustumCulled = false; p.renderOrder = 3;
@@ -255,6 +255,7 @@ export function buildAmbient(lanterns: THREE.Vector3[], extras: AmbientExtras = 
   // ---- low mist sheets (world-noise, follow the camera) ----
   const sheets: THREE.Mesh[] = [];
   const sheetMats: THREE.ShaderMaterial[] = [];
+  const sheetBase: number[] = [];   // calm-weather alpha of each haze sheet, so heavy weather can thicken them
   {
     const sg = new THREE.PlaneGeometry(420, 420, 1, 1); sg.rotateX(-Math.PI / 2);
     for (const [y, a, sc, sp] of [[1.1, 0.5, 0.028, 0.5], [3.4, 0.32, 0.019, 0.35], [6.2, 0.2, 0.012, 0.25]] as number[][]) {
@@ -280,7 +281,7 @@ export function buildAmbient(lanterns: THREE.Vector3[], extras: AmbientExtras = 
       });
       const sh = new THREE.Mesh(sg, mm);
       sh.position.y = y; sh.renderOrder = 2; sh.frustumCulled = false; sh.name = "mistsheet";
-      group.add(sh); sheets.push(sh); mats.push(mm); sheetMats.push(mm);
+      group.add(sh); sheets.push(sh); mats.push(mm); sheetMats.push(mm); sheetBase.push(a);
     }
   }
 
@@ -391,15 +392,18 @@ export function buildAmbient(lanterns: THREE.Vector3[], extras: AmbientExtras = 
   return {
     group,
     setTone(tn: Tone) { tone = tn; },
-    update(t, cam, vpHeight) {
+    update(t, cam, vpHeight, heavyMist = 0) {
       const lamp = tone?.lamp ?? 0, night = tone?.night ?? 0;
       pools.pm.uniforms.uLamp.value = lamp; pools.im.visible = lamp > 0.02;
       if (raysMat) { raysMat.uniforms.uRayK.value = tone?.rays ?? 1; if (tone) { raysMat.uniforms.uRayDir.value.copy(tone.key).multiplyScalar(-1); raysMat.uniforms.uCol.value.copy(tone.sunCol).lerp(hex(0xffffff), 0.35); } }
       for (const sm of sheetMats) if (tone) sm.uniforms.uCol.value.copy(tone.horizon).lerp(hex(PAL.paper), 0.18 * (1 - night));
-      for (const m of mats) { if (m.uniforms.uLamp) { m.uniforms.uLamp.value = lamp; m.uniforms.uNight.value = night; } m.uniforms.uTime.value = t; if (m.uniforms.uCam) m.uniforms.uCam.value.copy(cam); if (m.uniforms.uPx) m.uniforms.uPx.value = vpHeight * 0.5; }
+      sheetMats.forEach((sm, i) => { sm.uniforms.uA.value = Math.min(0.8, sheetBase[i] * (1 + 1.8 * heavyMist)); });
+      for (const m of mats) { if (m.uniforms.uLamp) { m.uniforms.uLamp.value = lamp; m.uniforms.uNight.value = night; } if (m.uniforms.uWx) m.uniforms.uWx.value = heavyMist; m.uniforms.uTime.value = t; if (m.uniforms.uCam) m.uniforms.uCam.value.copy(cam); if (m.uniforms.uPx) m.uniforms.uPx.value = vpHeight * 0.5; }
       for (const sh of sheets) { sh.position.x = cam.x; sh.position.z = cam.z; }
       runeMat.opacity = 0.35 + 0.25 * (0.5 + 0.5 * Math.sin(t * 1.4));
       rune.rotation.z = t * 0.05;
     },
   };
 }
+
+

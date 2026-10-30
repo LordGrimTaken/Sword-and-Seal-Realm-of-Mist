@@ -15,6 +15,13 @@ import { EntityManager, type Ent } from "./entities";
 import { FollowCamera } from "./camera";
 import { Input } from "./input";
 import { Hud, type HudEnt } from "../ui/hud";
+import type { CombatLogPanel } from "../ui/combatlog";
+import type { BestiaryPanel } from "../ui/bestiary";
+import type { QuestTrackerHud } from "../ui/questtracker";
+import type { CombatFeedback } from "../ui/feedback";
+import type { SessionStatsPanel } from "../ui/stats";
+import type { PartyPanel } from "../ui/party";
+import type { TradePanel } from "../ui/trade";
 import { audio } from "../audio/instance";
 import { PROMPT_RANGE } from "../ui/dialog";
 import { plain } from "../ui/glyphs";
@@ -24,6 +31,9 @@ import { TargetRing, installTargetStyle, orderTargets, cycleFrom, TAB_RANGE, DRO
 import { Juice, HIT_STOP_MS } from "./juice";
 import { createRollFx, type RollFx } from "../vfx/roll";
 import { ContentUi } from "../ui/contentui";
+import { SpiritCompanion, type PetDebug } from "../models/pet";
+import { ChestField } from "../models/chest";
+import { settings } from "../ui/settings";
 
 // mirrors QI in server/src/data.ts (the server is authoritative; these only drive prediction and the HUD)
 const QI_REGEN = 10, DODGE_COST = 15, DODGE_DIST = 6, DODGE_TIME = 0.25, DODGE_CD = 1.5;
@@ -67,7 +77,7 @@ export interface DebugState {
   /** the live follow camera (yaw/pitch/dist are writable) so screenshot scripts can frame a shot */
   readonly cam?: { yaw: number; pitch: number; dist: number };
   readonly scene?: unknown;
-  readonly ents: Array<{ id: number; k: string; n: string; x: number; z: number; hp: number; mhp: number }>;
+  readonly ents: Array<{ id: number; k: string; n: string; mob?: string; x: number; z: number; hp: number; mhp: number; veiled?: boolean }>;
   /** impact-juice switch and counters (hit-stop / nudge / flash / vignette), for tests */
   readonly juice?: { on: boolean; frozen: boolean; hits: number; stops: number; lastStopMs: number; nudges: number; flashes: number; vignettes: number };
   /** ids Tab would cycle through right now, in order */
@@ -77,6 +87,8 @@ export interface DebugState {
   /** last client-side refusal message (no target, out of range, not enough Qi) */
   readonly lastRefusal?: string;
   readonly dodge?: { rolls: number; dodged: number; rolling: boolean; cooldownMs: number; lastDist: number };
+  /** 0.5.0 treasure caches from the server `chests` message (fixed spots, ready state, which one the F prompt points at) */
+  readonly chests?: Array<{ id: number; x: number; z: number; ready: boolean; hovered: boolean }>;
 }
 
 /** A telegraphed ground attack the client is showing: circle, cone, line, or a sweeping beam (`sweep` != 0). */
@@ -158,6 +170,71 @@ export class Game {
   private tmpV2 = new THREE.Vector3();
   private onResize = () => this.resize();
   onExit: () => void = () => {};
+  /** Client-only Combat Log panel (toggled with C, created and attached by main.ts): damage/heal events push readable lines. */
+  combatLog: CombatLogPanel | null = null;
+  /** Client-only Quest Tracker strip (created and attached by main.ts): mirrors the `sq` side-quest list the Journal gets. */
+  questTracker: QuestTrackerHud | null = null;
+  /** Client-only combat feedback overlay (created and attached by main.ts): damage flash + low-health edge. */
+  combatFeedback: CombatFeedback | null = null;
+  /** Client-only cosmetic spirit companion: a lantern-wisp that trails the local player (toggled with P, wired in main.ts). */
+  private pet: SpiritCompanion | null = null;
+  private petOn = false;
+  /** Client-only Session Statistics panel (toggled with V, created and attached by main.ts): kills, damage, healing, XP, time. */
+  stats: SessionStatsPanel | null = null;
+  /** Client-only Bestiary / Codex (toggled with Shift+B, created and attached by main.ts): persisted kills per mob type. */
+  bestiary: BestiaryPanel | null = null;
+  /** Client-only party panel (key O, created and attached by main.ts): members/invites from the server `party` message. */
+  party: PartyPanel | null = null;
+  /** 0.5.0 client-only trade window (created and attached by main.ts): two-sided offers from the server `trade` message. */
+  trade: TradePanel | null = null;
+  /** 0.5.0 treasure caches: procedural chests placed from the dedicated `chests` message + the F interact prompt. */
+  private chests!: ChestField;
+  /** Display names seen for each mob type in snapshots, so the Bestiary can label entries it has not named yet. */
+  private mobNames = new Map<string, string>();
+  /** Root of the HUD overlay, where client-only panels (e.g. the combat log) are appended. */
+  get hudRoot(): HTMLElement { return this.hud.root; }
+
+  /** Last display name seen in a snapshot for a mob type (null until this session has met one). */
+  mobName(type: string): string | null { return this.mobNames.get(type) ?? null; }
+
+  // ---------------------------------------------------------------- spirit companion (client-only)
+  /** Show/hide the cosmetic spirit companion. Hiding only toggles visibility, so switching it is free. */
+  setPetEnabled(on: boolean): void {
+    this.petOn = on;
+    this.pet?.setEnabled(on);
+  }
+  get isPetEnabled(): boolean { return this.petOn; }
+  /** P key (bound in main.ts): flip the companion and return its new state, so the caller can persist it. */
+  togglePet(): boolean {
+    this.setPetEnabled(!this.petOn);
+    return this.petOn;
+  }
+  /** Short HUD toast, used for client-only actions such as the companion toggle. */
+  toast(msg: string): void { this.hud.toast(msg); }
+  /** 0.5.0 party: send one action; the server validates it and answers with the resulting `party` state. */
+  sendParty(a: "accept" | "decline" | "leave"): void { this.net.send({ t: "party", a }); }
+  /** 0.5.0 trade: send one action; the server validates it and pushes the resulting two-sided state to both traders. */
+  sendTrade(a: "accept" | "decline" | "offer" | "ready" | "cancel", extra?: { name?: string; slot?: number; qty?: number; coin?: number }): void {
+    this.net.send({ t: "trade", a, ...extra });
+  }
+  /** The bag the trade panel offers from (same order as the server's slot references). */
+  tradeBag() { return this.hud.bag.list; }
+  /** Read-only snapshot for the debug surface (window.__jz.pet). */
+  petDebug(): PetDebug {
+    return this.pet?.debug() ?? { enabled: false, visible: false, x: 0, y: 0, z: 0, bob: 0, glow: 0 };
+  }
+
+  /** Close the windows that share the screen centre (bag, board, help, map, content windows, NPC dialog). The
+   *  client-only Bestiary sits in the same space and calls this before opening so two paper windows never stack. */
+  closeCentrePanels() {
+    while (this.content?.anyOpen) if (!this.content.closeTop()) break;
+    if (this.hud.dialog.isOpen) this.hud.dialog.close();
+    if (this.hud.bag.isOpen) this.hud.bag.toggle(false);
+    if (this.hud.board.isOpen) this.hud.board.toggle(false);
+    if (this.hud.help.isOpen) this.hud.help.toggle(false);
+    if (this.hud.quest.logOpen) this.hud.quest.toggleLog(false);
+    if (this.hud.map.isOpen) this.hud.map.toggle(false);
+  }
 
   constructor(private net: NetClient, welcome: Welcome, private myName: string, cls: ClassId) {
     this.myId = welcome.id;
@@ -187,6 +264,9 @@ export class Game {
     installTargetStyle();
     this.ring = new TargetRing(this.scene);
     this.rollFx = createRollFx(this.scene, (x, z) => this.world.heightAt(x, z));
+    // client-only cosmetic pet: ambient life that trails the local player (P toggles it; main.ts owns the preference)
+    this.pet = new SpiritCompanion();
+    this.scene.add(this.pet.group);
 
     this.hud = new Hud({
       onSlot: (s) => this.castSlot(s),
@@ -200,6 +280,8 @@ export class Game {
     });
     this.hud.setZone(this.zone);
     this.hud.setSkills(this.skills, this.cls);
+    // 0.5.0 treasure caches: fixed spots from the `chests` message, a procedural model each, plus the F prompt
+    this.chests = new ChestField(this.scene, (x, z) => this.world.heightAt(x, z), this.hud.root);
     this.content = new ContentUi(this.hud.root, {
       send: (m) => this.net.send(m),
       inv: () => this.hud.bag.list,
@@ -209,7 +291,7 @@ export class Game {
       say: (t) => this.hud.addChat("", t, true, false),
       playerDist: (id) => { const o = this.ents.map.get(id); return o ? Math.hypot(o.x - this.vis.x, o.z - this.vis.z) : 0; },
     });
-    this.hud.addChat("", "WASD move · RMB drag orbit · wheel zoom · Tab target · 1-4 skills · Space dodge · F speak · I bag · G gear · J journal · B notice board · L quests · F1 help · Enter chat", true, false);
+    this.hud.addChat("", "WASD move · RMB drag orbit · wheel zoom · Tab target · 1-4 skills · Space dodge · C combat log · V stats · P companion · F speak · I bag · G gear · J journal · B notice board · Shift+B bestiary · L quests · F1 help · Enter chat", true, false);
 
     this.input = new Input(this.renderer.domElement, {
       onCast: (s) => this.castSlot(s),
@@ -315,7 +397,8 @@ export class Game {
       get qi() { return self.hud.qiState(); },
       get lastRefusal() { return self.lastRefusal; },
       get dodge() { return { rolls: self.rolls, dodged: self.dodgedCount, rolling: self.dashSteps > 0 || self.ents.map.get(self.myId)?.roll !== undefined, cooldownMs: Math.round(self.hud.cooldownLeft(0)), lastDist: +self.lastRollDist.toFixed(2) }; },
-      get ents() { return [...self.ents.map.values()].map((e) => ({ id: e.id, k: e.s.k, n: e.s.n, x: +e.x.toFixed(2), z: +e.z.toFixed(2), hp: e.s.hp, mhp: e.s.mhp })); },
+      get ents() { return [...self.ents.map.values()].map((e) => ({ id: e.id, k: e.s.k, n: e.s.n, mob: e.s.mob, x: +e.x.toFixed(2), z: +e.z.toFixed(2), hp: e.s.hp, mhp: e.s.mhp, ...(e.s.veiled !== undefined ? { veiled: e.s.veiled } : {}) })); },
+      get chests() { return self.chests.debug(); },
     } as DebugState;
     Object.defineProperty(dbg, "scene", { get: () => self.scene, enumerable: false }); // for inspection scripts
     Object.defineProperty(dbg, "cam", { get: () => self.fcam, enumerable: false }); // non-enumerable so spreading the state (tests) never serialises the camera
@@ -329,6 +412,8 @@ export class Game {
         const now = performance.now();
         this.lastTick = m.tick;
         this.ents.applySnapshot(m.ents, m.gone, now);
+        // additive: remember mob display names for the Bestiary (it labels discovered entries from them)
+        for (const s of m.ents) if (s.k === "mob" && s.mob && s.n && this.mobNames.get(s.mob) !== s.n) this.mobNames.set(s.mob, plain(s.n));
         for (const id of m.gone) if (id === this.targetId) this.targetId = -1;
         const me = this.ents.map.get(this.myId);
         // while a dodge roll is in flight the server's time-based dash and our step-based prediction disagree transiently: hold reconciliation until it has landed
@@ -354,6 +439,36 @@ export class Game {
       case "daily":
         this.hud.board.set(m.tasks, m.resetIn);
         break;
+      case "best":
+        // additive (0.5.0): the persisted per-mob kill codex (Shift+B). main.ts attaches the panel before wire()
+        // starts forwarding messages, so the login-time `best` lands here.
+        this.bestiary?.set(m.mobs);
+        break;
+      case "surge":
+        // additive (0.5.0): Mist Surge world-event state drives the top-centre banner directly (the HUD also
+        // falls back to the system chat lines, so either path keeps it correct).
+        this.hud.onSurge(m.active, m.endsIn);
+        break;
+      case "tide":
+        // additive (0.5.0): Lantern Tide world-event state drives the gold banner directly (chat fallback stays).
+        this.hud.onTide(m.active, m.endsIn);
+        break;
+      case "market":
+        // additive (0.5.0): Market Day world-event state drives the paper-red banner directly (chat fallback stays).
+        this.hud.onMarket(m.active, m.endsIn);
+        break;
+      case "party":
+        // additive (0.5.0): session-only group state (login sync + every change) drives the party panel (key O).
+        this.party?.set(m);
+        break;
+      case "chests":
+        // additive (0.5.0): the fixed treasure-cache list + ready state; procedural chests, no entity machinery.
+        this.chests.setState(m.chests);
+        break;
+      case "trade":
+        // additive (0.5.0): the server-authoritative two-sided trade state (null = not trading) drives the trade window.
+        this.trade?.set(m);
+        break;
       case "error":
         this.lastError = m.msg;
         this.hud.addChat("", `Server: ${plain(m.msg)}`, true, false);
@@ -362,6 +477,8 @@ export class Game {
         break;
       default:
         this.content.onMsg(m);
+        // additive: the client-only Quest Tracker mirrors the same `sq` list the Journal (J) just received
+        if (m.t === "sq") this.questTracker?.set(m.quests);
         break;
     }
   }
@@ -377,6 +494,39 @@ export class Game {
     return !!me && !!o && Math.hypot(me.x - o.x, me.z - o.z) <= maxDist;
   }
 
+  /** Combat log label for an entity: "you", its plain display name, or a neutral fallback when it is not known yet. */
+  private entName(id: number, fallback: string): string {
+    if (id === this.myId) return "you";
+    const e = this.ents.map.get(id);
+    return e && e.s.n ? plain(e.s.n) : fallback;
+  }
+
+  /** Client-only Combat Log: one readable line for a damage event that involves the local player (dealt or taken). */
+  private logCombatDamage(e: Extract<GameEvent, { k: "damage" }>) {
+    const log = this.combatLog;
+    if (!log || (e.src !== this.myId && e.dst !== this.myId)) return;
+    const amount = Math.round(e.amount);
+    if (e.src === this.myId && e.dst !== this.myId) {
+      const target = this.entName(e.dst, "the target");
+      log.push(e.crit ? `Critical hit! You hit ${target} for ${amount}` : `You hit ${target} for ${amount}`, e.crit ? "crit" : "deal");
+    } else if (e.dst === this.myId) {
+      const attacker = e.src === this.myId ? "Your own power" : this.entName(e.src, "Something");
+      log.push(e.crit ? `${attacker} critically hits you for ${amount}` : `${attacker} hits you for ${amount}`, e.crit ? "crit" : "take");
+    }
+  }
+
+  /** Client-only Combat Log: one readable line for a heal that involves the local player (buffs are filtered out by the caller). */
+  private logCombatHeal(e: Extract<GameEvent, { k: "heal" }>) {
+    const log = this.combatLog;
+    if (!log || (e.src !== this.myId && e.dst !== this.myId)) return;
+    const amount = Math.round(e.amount);
+    if (e.dst === this.myId) {
+      log.push(e.src === this.myId ? `Healed +${amount}` : `${this.entName(e.src, "Someone")} healed you for ${amount}`, "heal");
+    } else {
+      log.push(`You healed ${this.entName(e.dst, "an ally")} for ${amount}`, "heal");
+    }
+  }
+
   private onEvent(e: GameEvent) {
     const now = performance.now();
     switch (e.k) {
@@ -389,24 +539,37 @@ export class Game {
           this.vfx.hit(this.tmpV2.set(p.x, dst.y + dst.avatar.height * 0.6, p.z), e.crit);
         }
         if (e.dst === this.myId) this.hud.flashHurt();
+        // client-only combat feedback overlay: vermilion edge flash on the same "the local player was hit" beat
+        if (e.dst === this.myId) this.combatFeedback?.damage(now);
         if (e.src === this.myId || e.dst === this.myId) {
           audio.hit(e.crit);
           this.combatUntil = now + 6000;
         }
         this.ents.markAttack(e.src, now);
         if (e.src === this.myId && e.dst !== this.myId && dst) this.onMyHit(e, dst);
+        this.logCombatDamage(e);
+        // additive: Session Statistics - damage dealt by, and damage taken by, the local player
+        if (e.src === this.myId && e.dst !== this.myId) this.stats?.damageDealt(e.amount);
+        else if (e.dst === this.myId) this.stats?.damageTaken(e.amount);
         break;
       }
       case "heal": {
         // Buffs (Qi Guard / Wind Step) are range-0 "heal" skills; only a real, positive heal is shown.
         if (!(e.amount > 0)) break;
+        this.logCombatHeal(e);
+        if (e.dst === this.myId) this.stats?.healingReceived(e.amount); // additive: Session Statistics
         const p = this.entPos(e.dst, this.tmpV, 0.95);
         if (p) this.hud.float(p, `+${Math.round(e.amount)}`, "heal");
         break;
       }
       case "death": {
         const dead = this.ents.map.get(e.id);
-        if (e.killer === this.myId && e.id !== this.myId) { this.kills++; if (dead?.s.k === "mob") this.hud.quest.onKill(dead.s.mob); }
+        if (e.killer === this.myId && e.id !== this.myId) {
+          this.kills++;
+          // additive: Session Statistics - a killing blow of ours on a mob (an already-despawned victim simply has no entry left)
+          if (dead?.s.k === "mob" || !dead) this.stats?.mobSlain();
+          if (dead?.s.k === "mob") this.hud.quest.onKill(dead.s.mob);
+        }
         if (e.id === this.myId) audio.death();
         else if (dead && dead.s.k === "mob" && this.nearMe(e.id, 40)) audio.mobDeath();
         break;
@@ -442,7 +605,7 @@ export class Game {
       }
       case "xp": {
         this.hud.setXp(e.xp, e.next, e.lv);
-        if (e.amount > 0) this.hud.xpLine(e.amount);
+        if (e.amount > 0) { this.hud.xpLine(e.amount); this.stats?.xpGained(e.amount); } // additive: Session Statistics
         break;
       }
       case "levelup": {
@@ -565,13 +728,16 @@ export class Game {
   }
 
   /** The boss entity worth a health bar: targeted, or alive within 40 units. */
+  /** The boss whose HP bar is shown: only one at a time. 0.5.0 adds the Hollow Bride beside the Stone Guardian;
+   *  Warden/Hierophant are unchanged (they deliberately still use the target frame only). */
+  private static readonly BOSS_BAR_TYPES: ReadonlySet<string> = new Set(["stone_guardian", "hollow_bride"]);
   private bossEnt(): Ent | null {
     const t = this.ents.map.get(this.targetId);
-    if (t && t.s.mob === "stone_guardian" && !t.dead) return t;
+    if (t && t.s.mob && Game.BOSS_BAR_TYPES.has(t.s.mob) && !t.dead) return t;
     const me = this.ents.map.get(this.myId);
     if (!me) return null;
     for (const e of this.ents.map.values()) {
-      if (e.s.mob === "stone_guardian" && !e.dead && Math.hypot(e.x - me.x, e.z - me.z) <= 40) return e;
+      if (e.s.mob && Game.BOSS_BAR_TYPES.has(e.s.mob) && !e.dead && Math.hypot(e.x - me.x, e.z - me.z) <= 40) return e;
     }
     return null;
   }
@@ -615,8 +781,9 @@ export class Game {
   private handleKey(e: KeyboardEvent) {
     const a = document.activeElement;
     const typing = !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA") && (a as HTMLInputElement).type !== "range" && (a as HTMLInputElement).type !== "checkbox";
-    if (e.code === "F1") { e.preventDefault(); this.hud.help.toggle(); return; }
+    if (e.code === "F1") { e.preventDefault(); this.bestiary?.toggle(false); this.hud.help.toggle(); return; }
     if (e.code === "Escape") {
+      if (this.bestiary?.isOpen) { e.preventDefault(); this.bestiary.toggle(false); return; }
       if (this.content.closeTop()) return;
       if (this.hud.help.isOpen) this.hud.help.toggle(false);
       else if (this.hud.dialog.isOpen) this.hud.dialog.close();
@@ -627,13 +794,22 @@ export class Game {
       return;
     }
     if (typing || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    // opening another window puts the centred Bestiary away (they share the screen centre); Shift+B belongs to the
+    // codex itself and is handled in main.ts, so it is deliberately not in this list
+    if (["KeyG", "KeyJ", "KeyL", "KeyI", "KeyF"].includes(e.code) || e.key === "?") this.bestiary?.toggle(false);
     if (e.key === "?") { this.hud.help.toggle(); return; }
     if (e.code === "KeyG") { this.content.gearPanel.toggle(); audio.ui(this.content.gearPanel.isOpen ? "open" : "close"); return; }
     if (e.code === "KeyJ") { this.content.journal.toggle(); audio.ui(this.content.journal.isOpen ? "open" : "close"); return; }
     if (e.code === "KeyL") { this.hud.quest.toggleLog(); return; }
-    if (e.code === "KeyB") { this.hud.board.toggle(); return; }
+    if (e.code === "KeyB" && !e.shiftKey) { this.bestiary?.toggle(false); this.hud.board.toggle(); return; }
     if (e.code === "KeyI") { this.hud.bag.toggle(); audio.ui(this.hud.bag.isOpen ? "open" : "close"); return; }
-    if (e.code === "KeyF") this.speakToNearest();
+    if (e.code === "KeyO") {
+      // 0.5.0 party panel: O hides/shows it while a party or an invitation exists; solo players get a hint.
+      if (this.party?.toggle()) return;
+      this.toast("You are not in a party. Use /invite <name> to start one.");
+      return;
+    }
+    if (e.code === "KeyF") this.interact();
   }
 
   private npcs(): Ent[] {
@@ -646,6 +822,19 @@ export class Game {
       if (d <= maxDist && (!best || d < best.d)) best = { e, d };
     }
     return best;
+  }
+  /** F interact (0.5.0): open a ready treasure cache in reach if there is one, otherwise speak to the nearest NPC. */
+  private interact() {
+    if (this.hud.chatFocused) return;
+    const me = this.ents.map.get(this.myId);
+    if (!me || me.dead) return;
+    const chest = this.chests.nearestReady(this.vis.x, this.vis.z);
+    if (chest) {
+      this.net.send({ t: "openchest", id: chest });
+      audio.ui("open"); // instant feedback; the server answers with the loot/toast and the updated chest state
+      return;
+    }
+    this.speakToNearest();
   }
   private speakToNearest() {
     const me = this.ents.map.get(this.myId);
@@ -923,7 +1112,7 @@ export class Game {
 
     // ---- target ring
     const tgt = this.ents.map.get(this.targetId);
-    this.ring.update(now, tgt ? { id: tgt.id, k: tgt.s.k as "mob" | "npc" | "player", x: tgt.x, y: tgt.y, z: tgt.z, h: tgt.avatar.height, boss: tgt.s.mob === "stone_guardian" } : null);
+    this.ring.update(now, tgt ? { id: tgt.id, k: tgt.s.k as "mob" | "npc" | "player", x: tgt.x, y: tgt.y, z: tgt.z, h: tgt.avatar.height, boss: !!tgt.s.mob && Game.BOSS_BAR_TYPES.has(tgt.s.mob) } : null);
 
     // ---- NPC interaction
     if (me && !dead) {
@@ -935,6 +1124,9 @@ export class Game {
     } else if (this.hud.dialog.isOpen) this.hud.dialog.close();
     if (this.wasDead && !dead && me) this.refreshQuest();
     this.wasDead = dead;
+    // 0.5.0 veil-boss readability: forward the server's `veiled` status (sent only for the Hollow Bride) to her model's
+    // optional setVeiled hook. Strictly a no-op for every avatar without the hook and for entities without the flag.
+    for (const e of this.ents.map.values()) if (e.s.veiled !== undefined) (e.avatar as { setVeiled?: (v: boolean) => void }).setVeiled?.(e.s.veiled === true);
     this.trackPlayerFx();
     this.updateDangers(now);
     const boss = this.bossEnt();
@@ -958,6 +1150,15 @@ export class Game {
       ping: this.net.latency,
       nowMs: now,
     });
+
+    // ---- client-only combat feedback: the vermilion edge at the screen border (damage flash + low-health breath)
+    this.combatFeedback?.update(me && !dead ? me.s.hp / Math.max(1, me.s.mhp) : 1);
+
+    // ---- client-only treasure caches: lid/glow animation + the "F Open cache" prompt over the nearest ready chest
+    this.chests.update(dt, this.camera, this.vis.x, this.vis.z, !dead && !this.hud.chatFocused);
+
+    // ---- client-only spirit companion: trails the local player with a soft lag (purely local, never networked)
+    if (me) this.pet?.update(dt, this.vis.x, me.y, this.vis.z, moving ? this.myFacing : me.s.r, settings.get().reduceMotion);
 
     this.composer.render(dt);
   }
@@ -1016,6 +1217,9 @@ export class Game {
     this.juice.dispose(this.camera);
     this.ring.dispose();
     this.rollFx.dispose();
+    this.pet?.dispose();
+    this.pet = null;
+    this.chests?.dispose();
     this.renderer.dispose();
   }
 }

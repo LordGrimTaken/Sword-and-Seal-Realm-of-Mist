@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { build } from "esbuild";
 
 const CLIENT = resolve(import.meta.dirname, "..");
-const { chromium } = createRequire(import.meta.url)("/opt/npm-tools/node_modules/playwright");
+const { chromium } = createRequire(import.meta.url)("playwright"); // local devDependency: portable (the CI image's /opt/npm-tools path does not exist on Windows)
 const tmp = mkdtempSync(join(tmpdir(), "jz-audio-"));
 let bad = 1;
 try {

@@ -22,6 +22,12 @@ const DESC: Record<ClassId, string[]> = {
     "A burst of purifying light that harms foes in an area.",
     "Surges qi through the meridians: restore 40% of max HP.",
   ],
+  blade: [
+    "A rapid, light slash. Fast, but strikes for less than a sword.",
+    "Throws a whirling arc of blade qi at a foe (140% damage).",
+    "A spinning storm of blades that strikes every foe in the area.",
+    "Dances past harm: take 45% less damage for 5 s and recover 8% HP.",
+  ],
 };
 const KIND: Record<SkillDef["kind"], string> = { melee: "Melee", bolt: "Ranged", aoe: "Area", heal: "Heal / Buff" };
 

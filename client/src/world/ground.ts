@@ -4,6 +4,7 @@ import { fbm, mulberry32, smoothstep, vnoise } from "./noise";
 import { BRIDGE, PLAZA, POND, WATER_Y, bridgeY, pathMask, pathX, pondD, terrainHeight } from "./terrain";
 import { PAL, hex, toonGradient } from "./toon";
 import { applyWind } from "./wind";
+import { scatterSpatial } from "./vegetation";
 
 /**
  * Ink-paved plaza: annular flagstone courses with wet ink-wash joints, a lotus medallion (16 + 8 brush petals around a taiji hub,
@@ -258,14 +259,13 @@ export function buildGround(): THREE.Group {
   }
   const tuftMat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient(), side: THREE.DoubleSide });
   applyWind(tuftMat, { height: 0.7, amp: 0.34, idle: 0.3 });
-  const tm = new THREE.InstancedMesh(merged, tuftMat, tp.length);
-  tp.forEach((t, i) => {
+  // 5400 tufts cover the whole valley: one InstancedMesh has a single valley-wide bounding sphere (and the old mesh opted
+  // out of culling entirely), so split the same transforms into a few spatial chunks that each frustum-cull on their own.
+  scatterSpatial(group, merged, tuftMat, tp.map((t) => ({ x: t.x, z: t.z, s: t.s, ry: t.ry, col: t.c })), (t, i, mesh) => {
     V.set(t.x, terrainHeight(t.x, t.z) - 0.02, t.z); Q.setFromEuler(E.set(0, t.ry, 0)); S.set(t.s, t.s, t.s);
-    M.compose(V, Q, S); tm.setMatrixAt(i, M); tm.setColorAt(i, t.c);
-  });
-  tm.instanceMatrix.needsUpdate = true; if (tm.instanceColor) tm.instanceColor.needsUpdate = true;
-  tm.frustumCulled = false;
-  group.add(tm);
+    M.compose(V, Q, S); mesh.setMatrixAt(i, M);
+    if (t.col) mesh.setColorAt(i, t.col);
+  }, 6, "grass");
   // ---- stepping stones: shore trail, a crossing into the pond, and side trails off the path ----
   {
     const trail: { x: number; z: number; s: number; ry: number; top?: number }[] = [];

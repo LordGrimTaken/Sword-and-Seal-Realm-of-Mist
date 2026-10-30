@@ -58,13 +58,14 @@ const SKILL_ICON: Record<ClassId, IconName[]> = {
   sword: ["slash", "qiwave", "split", "shield"],
   talisman: ["fire", "bolt", "frost", "wind"],
   physician: ["needle", "rain", "burst", "pulse"],
+  blade: ["slash", "qiwave", "burst", "shield"],
 };
 
 export function skillIcon(cls: ClassId, slot: number): string {
   return icon(SKILL_ICON[cls]?.[slot - 1] ?? "slash");
 }
 
-export const CLASS_CREST: Record<ClassId, IconName> = { sword: "crestSword", talisman: "crestTalisman", physician: "crestPhysician" };
+export const CLASS_CREST: Record<ClassId, IconName> = { sword: "crestSword", talisman: "crestTalisman", physician: "crestPhysician", blade: "crestSword" };
 
 const ITEM_RULES: Array<[RegExp, IconName]> = [
   [/fiber|bamboo/i, "fiber"],

@@ -4,7 +4,8 @@
 export type UiKind = "click" | "open" | "close" | "error" | "chat" | "target" | "hover" | "ready" | "tab" | "lowqi";
 /** Mixer buses the player can balance (master is separate). */
 export type BusName = "music" | "amb" | "sfx" | "ui";
-export type AudioClass = "sword" | "talisman" | "physician";
+import type { ClassId } from "@shared/protocol";
+export type AudioClass = ClassId;
 
 export interface GameAudio {
   resume(): void;
@@ -22,7 +23,7 @@ export interface GameAudio {
   setBoss(on: boolean): void;
   /** Current mixer state (for the settings panel and tests): the levels the buses were last set to. */
   levels(): { master: number; music: number; amb: number; sfx: number; ui: number; muted: boolean; blurMuted: boolean; boss: boolean };
-  cast(skill: number, cls: "sword" | "talisman" | "physician"): void;
+  cast(skill: number, cls: AudioClass): void;
   /** Consecutive hits within 1.5 s climb the pentatonic scale. */
   hit(crit: boolean): void;
   death(): void;
@@ -409,7 +410,7 @@ export class Synth {
   // ------------------------------------------------------------ skills
   cast(skill: number, cls: AudioClass, t: number) {
     const s = clamp(Math.round(skill), 1, 4);
-    if (cls === "sword") {
+    if (cls === "sword" || cls === "blade") {
       if (s === 1) {
         this.noise({ t, dur: 0.22, peak: 0.34, atk: 0.04, filt: { type: "bandpass", f: 1400, f2: 6500, q: 1.6 } });
         this.osc({ f: 2400, t: t + 0.06, dur: 0.45, peak: 0.1, send: 0.3 });

@@ -440,6 +440,215 @@ function stoneGuardian(): Avatar {
   };
 }
 
+// ======================== Ink Wisp ========================
+function inkWisp(): Avatar {
+  const root = new THREE.Group();
+  const body = node(); root.add(body);
+  root.add(shadowBlob(0.55));
+  const ink = hx(PAL.ink, PAL.inkSoft, 0.2), inkD = hx(PAL.ink, PAL.inkSoft, 0.45), glowC = 0x9fd8ff;
+  const orb = node(); body.add(orb);
+  const shell = part(new THREE.SphereGeometry(0.34, 12, 10), ink, 0.02); shell.scale.y = 0.9; orb.add(shell);
+  const core = glowPart(new THREE.SphereGeometry(0.22, 10, 8), glowC); orb.add(core);
+  const tail: THREE.Object3D[] = [];
+  for (let i = 0; i < 3; i++) {
+    const tt = part(new THREE.SphereGeometry(0.2 - i * 0.05, 8, 6), i % 2 ? ink : inkD, 0.02);
+    tt.position.set((i - 1) * 0.07, -0.52 - i * 0.26, 0.03); tt.scale.setScalar(1 - i * 0.22);
+    body.add(tt); tail.push(tt);
+  }
+  for (const s of [-1, 1]) {
+    const e = glowPart(new THREE.BoxGeometry(0.1, 0.05, 0.04), glowC);
+    e.position.set(s * 0.11, 0.07, 0.27); orb.add(e);
+  }
+  const hnd = bake(root, 0.3);
+  const an = new Anim(); const dis = new Dissolve(root);
+  const shadow = root.children.find((c) => c.name === "shadow");
+  return {
+    root, height: 1.0,
+    setState(st: AvState) {
+      if (st !== "dead" && an.state === "dead") { dis.end(); root.visible = true; if (shadow) shadow.visible = true; hnd.glow.value = 1; }
+      an.setState(st);
+    },
+    update(dt: number) {
+      an.tick(dt);
+      const t = an.t, m = an.move, k = an.atk;
+      if (an.state === "dead") {
+        const d = ease(an.dead);
+        body.position.y = -0.4 * d; body.rotation.x = 1.2 * d;
+        hnd.glow.value = 1 - d;
+        const f = clamp01((an.stateT - 0.8) / 0.9);
+        if (f > 0) { dis.begin(); dis.set(1 - f); } else dis.end();
+        if (shadow) shadow.visible = f < 0.9;
+        root.visible = f < 1;
+        return;
+      }
+      hnd.glow.value = 0.8 + 0.2 * Math.sin(t * 4);
+      body.position.y = 0.8 + Math.sin(t * 2.6) * 0.12 + Math.sin(t * 5.3) * 0.05;
+      body.rotation.z = Math.sin(t * 1.3) * 0.1;
+      const lunge = Math.sin(Math.PI * clamp01((an.stateT % 0.8) / 0.8)) * 0.45 * k;
+      body.position.z = lunge; body.rotation.x = 0.3 * k;
+      const squish = 1 + m * 0.25; shell.scale.y = 0.9 / squish; shell.scale.x = squish; shell.scale.z = squish;
+      tail.forEach((tt, i) => {
+        tt.position.y = -0.52 - i * 0.26 + Math.sin(t * 2.6 + i * 1.3) * 0.06 * (1 + m);
+        tt.rotation.z = Math.sin(t * 2 + i) * 0.18;
+      });
+    },
+  };
+}
+
+// ======================== The Hollow Bride (fourth boss, 0.5.0) ========================
+/** A tall ceremonial wraith: ash-paper bridal robe, red and gold headdress with tassels, a hollow face, a long translucent
+ *  veil and trailing bridal cloth. VEILED = pallid/wrapped, eyes dim, no sigil; REVEALED = the veil thins, a golden sigil
+ *  blazes on the chest and the robe warms. `setVeiled` is the optional hook game.ts forwards from EntityState.veiled. */
+function hollowBride(): Avatar & { setVeiled: (v: boolean) => void } {
+  const root = new THREE.Group();
+  const body = node(); root.add(body);
+  root.add(shadowBlob(1.5));
+  const robe = hx(PAL.paper, PAL.inkSoft, 0.4), robeD = hx(PAL.paper, PAL.inkSoft, 0.62), ash = hx(PAL.inkSoft, PAL.ink, 0.3);
+  const gold = PAL.gold, red = PAL.vermilion, bone = hx(PAL.paper, PAL.ink, 0.08);
+
+  // ---- lower robe: a flared, trailing paper cone (no feet; she hovers)
+  const skirt = node(); skirt.position.y = 0.06; body.add(skirt);
+  for (let i = 0; i < 5; i++) {
+    const y = 0.24 + i * 0.5, r0 = 1.24 - i * 0.15, r1 = 1.12 - i * 0.15;
+    add(skirt, part(new THREE.CylinderGeometry(r1, r0, 0.54, 9, 1, true), i % 2 ? robe : robeD, 0.028), 0, y, 0);
+  }
+  const hem = add(skirt, part(new THREE.TorusGeometry(1.2, 0.055, 5, 16), gold, 0.018), 0, 0.16, 0); hem.rotation.x = Math.PI / 2;
+  for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; const fold = part(new THREE.BoxGeometry(0.1, 1.5, 0.05), robeD, 0.02); fold.rotation.y = a; add(skirt, fold, Math.sin(a) * 1.05, 0.95, Math.cos(a) * 1.05); }
+
+  // ---- torso + bridal sash
+  const torso = node(); torso.position.y = 2.35; body.add(torso);
+  add(torso, part(new THREE.CylinderGeometry(0.5, 0.82, 1.2, 8), robe, 0.03), 0, 0, 0);
+  add(torso, part(new THREE.BoxGeometry(1.2, 0.17, 0.86), gold, 0.02), 0, 0.42, 0.01);
+  add(torso, part(new THREE.BoxGeometry(0.3, 1.0, 0.1), red, 0.02), 0, 0.0, 0.55); // red front panel
+  for (let i = 0; i < 4; i++) add(torso, part(new THREE.TorusGeometry(0.62 - i * 0.06, 0.03, 4, 12), robeD, 0.015), 0, 0.24 - i * 0.2, 0).rotation.x = Math.PI / 2;
+
+  // ---- arms: long trailing sleeves
+  const mkArm = (s: number) => {
+    const sh = node(); sh.position.set(s * 0.62, 2.72, 0.02); body.add(sh);
+    add(sh, part(new THREE.SphereGeometry(0.24, 9, 7), robe, 0.02), 0, 0, 0);
+    const elbow = node(); elbow.position.y = 0.55; sh.add(elbow);
+    add(elbow, part(new THREE.CylinderGeometry(0.16, 0.22, 1.0, 7), robeD, 0.022), 0, 0.5, 0);
+    const hand = node(); hand.position.y = 1.0; elbow.add(hand);
+    add(hand, part(new THREE.SphereGeometry(0.11, 8, 6), bone, 0.018), 0, 0, 0);
+    for (let i = 0; i < 3; i++) add(hand, part(new THREE.ConeGeometry(0.035, 0.26, 4), bone, 0.01), (i - 1) * 0.07, -0.16, 0.02);
+    return { sh, elbow, hand };
+  };
+  const armL = mkArm(-1), armR = mkArm(1);
+
+  // ---- head: pale mask over a hollow void, dim veil-lit eyes, red-gold bridal crown with tassels
+  const head = node(); head.position.set(0, 3.28, 0.02); body.add(head);
+  add(head, part(new THREE.SphereGeometry(0.34, 12, 10), bone, 0.025), 0, 0, 0);
+  add(head, part(new THREE.BoxGeometry(0.5, 0.44, 0.36), ash, 0.02), 0, 0.0, 0.22);
+  for (const s of [-1, 1]) add(head, glowPart(new THREE.SphereGeometry(0.055, 8, 6), 0xd8e4ff), s * 0.1, 0.03, 0.4);
+  const crown = node(); crown.position.y = 0.3; head.add(crown);
+  add(crown, part(new THREE.TorusGeometry(0.27, 0.045, 5, 12), gold, 0.018), 0, -0.02, 0).rotation.x = Math.PI / 2;
+  for (let i = -2; i <= 2; i++) { const c = part(new THREE.ConeGeometry(0.06, 0.5 + (i === 0 ? 0.2 : 0), 5), gold, 0.016); c.rotation.z = -i * 0.26; add(crown, c, i * 0.11, 0.26, 0); }
+  const tassels: THREE.Bone[][] = [];
+  for (const s of [-1, 1]) {
+    let p: THREE.Object3D = crown; const bs: THREE.Bone[] = [];
+    for (let i = 0; i < 3; i++) {
+      const b = node(); b.position.y = i ? -0.3 : 0.08; b.position.x = s * 0.16; p.add(b); bs.push(b);
+      add(b, part(new THREE.ConeGeometry(0.05 - i * 0.008, 0.34, 4), red, 0.012), 0, -0.17, 0);
+      p = b;
+    }
+    tassels.push(bs);
+  }
+
+  // ---- translucent bridal cloth: three long veil panels from the crown + two trailing ribbons behind the waist (unbaked)
+  const veilMat = new THREE.MeshToonMaterial({ color: 0xf4eee2, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false });
+  const veil = new THREE.Group(); veil.position.set(0, 0.16, 0); head.add(veil);
+  const veilPanels: THREE.Mesh[] = [];
+  for (let i = 0; i < 3; i++) {
+    const pl = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 2.9, 1, 4), veilMat);
+    pl.position.set((i - 1) * 0.3, -1.2, i === 1 ? 0.34 : 0.06);
+    pl.rotation.y = (i - 1) * 0.55;
+    veil.add(pl); veilPanels.push(pl);
+  }
+  const clothMat = new THREE.MeshToonMaterial({ color: 0xe9dcc4, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false });
+  const ribbons: THREE.Bone[][] = [];
+  for (const s of [-1, 1]) {
+    const rootB = node(); rootB.position.set(s * 0.3, 2.2, -0.5); body.add(rootB);
+    const bs: THREE.Bone[] = []; let p: THREE.Object3D = rootB;
+    for (let i = 0; i < 5; i++) {
+      const b = node(); b.position.y = i ? 0 : 0; b.position.z = i ? -0.52 : 0; p.add(b); bs.push(b);
+      const seg = new THREE.Mesh(new THREE.PlaneGeometry(0.42 - i * 0.05, 0.56), clothMat);
+      seg.position.z = -0.26; seg.rotation.x = Math.PI / 2; b.add(seg);
+      p = b;
+    }
+    ribbons.push(bs);
+  }
+
+  // ---- revealed sigil: an additive brush-rune on the chest, hidden while veiled (unbaked)
+  const sigilMat = new THREE.MeshBasicMaterial({ map: symbolTexture("rune", 256, "#ffce7a", "#fff0c8").tex, color: 0xffce7a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false });
+  const sigil = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), sigilMat); sigil.position.set(0, 2.4, 0.86); body.add(sigil);
+
+  const hnd = bake(root, 0.3);
+  const baked = hnd.skinned.material as THREE.MeshToonMaterial;
+  const an = new Anim(); const dis = new Dissolve(root);
+  const shadow = root.children.find((c) => c.name === "shadow");
+  let veilAmt = 1; // 1 = VEILED (pallid, wrapped), 0 = REVEALED
+  let veilTarget = 1;
+  return {
+    root, height: 4.4,
+    setVeiled(v: boolean) { veilTarget = v ? 1 : 0; },
+    setState(st: AvState) {
+      if (st !== "dead" && an.state === "dead") { dis.end(); root.visible = true; if (shadow) shadow.visible = true; body.rotation.set(0, 0, 0); body.position.set(0, 0.25, 0); hnd.glow.value = 1; }
+      an.setState(st);
+    },
+    update(dt: number) {
+      an.tick(dt);
+      const t = an.t, m = an.move, k = an.atk;
+      veilAmt += (veilTarget - veilAmt) * Math.min(1, dt * 4.5);
+      if (an.state === "dead") {
+        const d = ease(an.dead);
+        body.rotation.x = 0.5 * d; body.position.y = 0.25 - 0.5 * d;
+        hnd.glow.value = (1 - veilAmt) * 0.6 * (1 - d);
+        sigilMat.opacity = 0; veilMat.opacity = 0.3 * (1 - d);
+        const f = clamp01((an.stateT - 0.8) / 1.0);
+        if (f > 0) { dis.begin(); dis.set(1 - f); } else dis.end();
+        if (shadow) shadow.visible = f < 0.9;
+        root.visible = f < 1;
+        return;
+      }
+      // state read-out: veil opacity, robe tint (cool ash while veiled -> warm bone when revealed), sigil + eyes
+      veilMat.opacity = 0.12 + 0.4 * veilAmt;
+      const warm = 1 - veilAmt;
+      baked.color.setRGB(0.82 + 0.18 * warm, 0.85 + 0.13 * warm, 0.9 + 0.02 * warm);
+      const pulse = 0.5 + 0.5 * Math.sin(t * 5.2);
+      sigilMat.opacity = warm * (0.55 + 0.4 * pulse);
+      sigil.scale.setScalar(0.9 + 0.14 * pulse * warm + 0.08 * warm);
+      hnd.glow.value = 0.35 + 0.15 * Math.sin(t * 1.7) + 0.55 * warm + 0.25 * k;
+      const hover = Math.sin(t * 1.15) * 0.07;
+      body.position.y = 0.25 + hover + 0.03 * m;
+      body.rotation.z = Math.sin(t * 0.85) * 0.03 + Math.sin(t * 3.1) * 0.012 * m;
+      body.position.z = 0.18 * Math.sin(Math.PI * clamp01((an.stateT % 1.5) / 1.5)) * k;
+      const bow = Math.sin(Math.PI * clamp01((an.stateT % 1.5) / 1.5)) * k;
+      torso.rotation.x = -0.14 * bow; head.rotation.x = 0.12 * bow - 0.03;
+      torso.rotation.y = Math.sin(t * 0.6) * 0.06 * (1 - k);
+      head.rotation.y = Math.sin(t * 0.42) * 0.14 * (1 - k);
+      head.rotation.z = Math.sin(t * 0.7) * 0.03;
+      // long sleeves: sway, then sweep forward on attack
+      const sweep = Math.sin(Math.PI * clamp01((an.stateT % 1.5) / 1.5)) * k;
+      armL.sh.rotation.x = -0.1 - sweep * 1.5 + Math.sin(t * 1.3) * 0.05 * (1 - k);
+      armR.sh.rotation.x = -0.1 - sweep * 1.3 + Math.sin(t * 1.3 + 1) * 0.05 * (1 - k);
+      armL.sh.rotation.z = 0.12 + 0.1 * (1 - veilAmt); armR.sh.rotation.z = -0.12 - 0.1 * (1 - veilAmt);
+      armL.elbow.rotation.x = -0.35 - sweep * 0.5; armR.elbow.rotation.x = -0.3 - sweep * 0.4;
+      // crown tassels sway with the head
+      tassels.forEach((bs, ri) => bs.forEach((b, j) => {
+        b.rotation.x = Math.sin(t * 2.1 - j * 0.8 + ri) * (0.08 + 0.05 * j);
+        b.rotation.z = Math.sin(t * 1.5 + j * 0.6 + ri * 2) * 0.06;
+      }));
+      // trailing bridal cloth ripples behind her, faster when she drifts
+      ribbons.forEach((bs, ri) => bs.forEach((b, j) => {
+        b.rotation.x = 0.18 + Math.sin(t * 1.7 - j * 0.75 + ri * 1.9) * (0.14 + 0.03 * j) + 0.16 * m;
+        b.rotation.y = Math.sin(t * 1.1 + j * 0.4 + ri) * 0.1;
+      }));
+      veil.rotation.z = Math.sin(t * 0.8) * 0.05 + Math.sin(t * 2.3) * 0.02 * m;
+      veilPanels.forEach((pl, i) => { pl.scale.y = 1 + Math.sin(t * 1.3 + i * 0.9) * 0.05 + 0.05 * (1 - veilAmt); });
+    },
+  };
+}
+
 export function buildMob(type: string): Avatar {
   switch (type) {
     case "bamboo_spirit": return bambooSpirit();
@@ -448,6 +657,11 @@ export function buildMob(type: string): Avatar {
     case "lotus_toad": return lotusToad();
     case "stone_hound": return stoneHound();
     case "jade_serpent": return jadeSerpent();
+    case "ink_wisp": return inkWisp();
+    case "mist_warden": return stoneGuardian();
+    case "hollow_hierophant": return stoneGuardian(); // 0.5.0 third boss: reuses the carved colossus until it gets its own model
+    case "hollow_bride": return hollowBride(); // 0.5.0 fourth boss: veiled wraith with its own model + setVeiled hook
+    case "thorn_sprite": return foxSpirit();
     default: return stoneGuardian();
   }
 }

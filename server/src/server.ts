@@ -198,6 +198,18 @@ function onMessage(s: Session, data: RawData, isBinary: boolean) {
     case "dodge":
       if (p) world.dodge(p, msg);
       return;
+    case "mount": // 0.5.0 additive: toggle the spirit-sword mount (validated inside World.toggleMount)
+      if (p) world.toggleMount(p);
+      return;
+    case "party": // 0.5.0 additive: session-only party commands (validated inside PartyManager)
+      if (p) world.party.handle(p, msg);
+      return;
+    case "openchest": // 0.5.0 additive: open a treasure cache (range/readiness validated inside ChestManager)
+      if (p) world.chests.open(p, msg.id);
+      return;
+    case "trade": // 0.5.0 additive: player-to-player trading (every field validated inside TradeManager)
+      if (p) world.trade.handle(p, msg);
+      return;
     case "chat":
       if (p && typeof msg.text === "string") world.chat(p, msg.text.slice(0, 400));
       return;

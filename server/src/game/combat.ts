@@ -1,8 +1,10 @@
 import type { GameEvent } from "../../../shared/protocol.ts";
-import { CLASSES, MAX_LEVEL, TUNING, attackFor, killXp, maxHpFor, xpToNext, type SkillData } from "../data.ts";
+import { realmForLevel } from "../../../shared/protocol.ts";
+import { CLASSES, MAX_LEVEL, TUNING, attackFor, killXp, lanternTideXpMult, maxHpFor, mistSurgeMult, veilPhaseAt, xpToNext, type SkillData } from "../data.ts";
 import { ecoKill, ecoLoot, ecoXp } from "../economy.ts";
 import type { Mob, Player } from "./types.ts";
 import type { World } from "./world.ts";
+import { KILL_XP_SHARE } from "./party.ts";
 import { questOnKill, questOnLoot } from "./quests.ts";
 import { addItem } from "./inventory.ts";
 import { isInvulnerable, spendQi } from "./dodge.ts";
@@ -52,6 +54,7 @@ export function handleCast(world: World, p: Player, msg: { skill: unknown; targe
     const { amount, crit } = roll(p, sd);
     damageMob(world, p, target, amount, crit, id);
     if (sd.slow && target.hp > 0) { target.slowUntil = now + sd.slow.dur; target.slowMult = sd.slow.mult; }
+    if (sd.burn && target.hp > 0) { target.burnDmg = sd.burn.base + sd.burn.perLv * p.lv; target.burnUntil = now + sd.burn.ticks * sd.burn.every + 0.04; target.burnNext = now + sd.burn.every; target.burnEvery = sd.burn.every; target.burnSrc = p.id; }
   } else if (sd.target === "point") {
     for (const m of world.mobs) {
       if (!aliveMob(m) || dist(m.x, m.z, tx, tz) > (sd.radius ?? 5)) continue;
@@ -80,6 +83,17 @@ export function healPlayer(world: World, src: Player, dst: Player, amount: numbe
 }
 
 export function damageMob(world: World, p: Player, m: Mob, amount: number, crit: boolean, skill?: number) {
+  // 0.5.0 The Hollow Bride: while VEILED she is immune to ALL damage. The strike still draws threat (so she keeps the fight)
+  // and reports a zero-damage event (the client floats a 0 = "hit the veil"), but no HP is lost, so burn ticks and every other
+  // damage source are blocked too. The phase comes from the same deterministic helper the boss AI uses - never from a client
+  // message or the outbound `veiled` status flag.
+  const veil = m.def.boss?.veil;
+  if (veil && m.boss?.engagedAt && veilPhaseAt(world.time, m.boss.engagedAt, veil) === "veiled") {
+    m.threat.set(p.id, (m.threat.get(p.id) ?? 0) + 1);
+    if (m.ai === "idle") { m.ai = "chase"; m.target = p.id; }
+    world.emitNear(m.x, m.z, { k: "damage", src: p.id, dst: m.id, amount: 0, crit: false, skill });
+    return;
+  }
   const dealt = Math.min(amount, m.hp);
   m.hp -= dealt;
   m.threat.set(p.id, (m.threat.get(p.id) ?? 0) + dealt);
@@ -95,6 +109,9 @@ export function hurtPlayer(world: World, p: Player, raw: number, srcId: number) 
   let amount = raw;
   if (world.time < p.guardUntil) amount *= p.guardMult;
   amount *= 1 - p.gear.def; // 0.4.0: equipment damage reduction
+  // 0.5.0 Mist Surge: every mob damage source (melee/swings/lunges via mobAttack, poison ticks and boss ground patterns)
+  // ends up here, so the +20% is applied once, centrally, while the event window is open.
+  amount *= mistSurgeMult(world.time);
   amount = Math.max(1, Math.round(amount));
   const dealt = Math.min(amount, p.hp);
   p.hp -= dealt;
@@ -124,13 +141,30 @@ export function poisonTick(world: World, p: Player) {
   }
 }
 
+/** Called every tick per mob: periodic burn damage as ordinary `damage` events from the casting player. */
+export function burnTick(world: World, m: Mob) {
+  if (m.burnUntil <= 0) return;
+  if (world.time >= m.burnNext) {
+    if (world.time > m.burnUntil) { m.burnUntil = 0; return; }
+    const p = world.players.get(m.burnSrc);
+    if (!p) { m.burnUntil = 0; return; }
+    damageMob(world, p, m, Math.round(m.burnDmg), false);
+    m.burnNext += m.burnEvery;
+    if (m.burnNext > m.burnUntil) m.burnUntil = 0;
+  }
+}
+
 /** Respawn delay. TEST_MODE=1 with TEST_BOSS_RESPAWN=<s> shortens the boss timer so tests can observe it; never active otherwise. */
 const respawnSeconds = (m: Mob) => (m.def.boss && process.env.TEST_MODE === "1" && Number(process.env.TEST_BOSS_RESPAWN) > 0 ? Number(process.env.TEST_BOSS_RESPAWN) : m.def.respawn);
 
 export const enrageMult = (m: Mob) => (m.boss?.enraged ? m.def.boss!.enrageMult : 1);
 
 export function mobAttack(world: World, m: Mob, p: Player) {
-  const amount = (m.def.dmgBase + m.def.dmgPerLv * m.lv) * rand(0.9, 1.1) * enrageMult(m);
+  // The Mist Surge multiplier is applied centrally in hurtPlayer, so this melee hit surges along with poison ticks and boss patterns.
+  // 0.5.0 The Hollow Bride: while REVEALED her hits land `revealDmgMult` harder (the veiled lash is the ordinary swing).
+  const veil = m.def.boss?.veil;
+  const reveal = veil && m.boss?.engagedAt && veilPhaseAt(world.time, m.boss.engagedAt, veil) === "revealed" ? veil.revealDmgMult : 1;
+  const amount = (m.def.dmgBase + m.def.dmgPerLv * m.lv) * rand(0.9, 1.1) * enrageMult(m) * reveal;
   m.attackUntil = world.time + 0.4;
   hurtPlayer(world, p, amount, m.id);
 }
@@ -141,13 +175,18 @@ export function killMob(world: World, m: Mob, killer: Player) {
   m.windupUntil = 0;
   if (m.boss) { m.boss.pending.length = 0; m.boss.engagedAt = 0; m.boss.phase2 = false; m.boss.enraged = false; }
   world.emitNear(m.x, m.z, { k: "death", id: m.id, killer: killer.id });
+  const credited = new Set<number>(); // 0.5.0 party: players who already got FULL kill XP (never double-granted a share)
   for (const pid of m.threat.keys()) {
     const p = world.players.get(pid);
     if (!p) continue;
     // boss: only participants still in range get credit (no free rides from across the valley)
     if (m.def.boss && dist(p.x, p.z, m.x, m.z) > m.def.boss.creditRange) continue;
+    credited.add(p.id);
     const lvBefore = p.lv;
-    grantXp(world, p, killXp(m.def.xpPerLv, m.lv, p.lv), "kill"); // level-difference scaling lives in data.ts (xpLevelMult)
+    // 0.5.0 Lantern Tide: a bounded +25% on KILL XP only. It multiplies the existing kill path (never a new reward source),
+    // and the amount is rounded once here so the xp event, the level curve and the "earned XP" daily all see the same number.
+    const killXpAmount = Math.round(killXp(m.def.xpPerLv, m.lv, p.lv) * lanternTideXpMult(world.time));
+    grantXp(world, p, killXpAmount, "kill"); // level-difference scaling lives in data.ts (xpLevelMult)
     for (const loot of m.def.loot) {
       if (!(p.testDrops && process.env.TEST_MODE === "1") && Math.random() >= loot.chance) continue;
       const qty = loot.min + Math.floor(Math.random() * (loot.max - loot.min + 1));
@@ -161,6 +200,24 @@ export function killMob(world: World, m: Mob, killer: Player) {
     ecoKill(world, p, m, lvBefore);
   }
   m.threat.clear();
+  // 0.5.0 party benefit — SHARED KILL XP. Every OTHER living party member of the killer within KILL_XP_SHARE_RANGE of
+  // the corpse receives KILL_XP_SHARE (50%) of their own kill-XP value for this mob (same killXp curve and Lantern Tide
+  // multiplier, rounded once). Only XP: loot, coin, jade and quest credit still go to the credited killers only. A solo
+  // killer takes the no-party early-out inside sharedXpHelpers() -> no extra grants, events or messages (bit-identical),
+  // and players already credited with full XP (`credited`) are skipped, so nobody is double-granted. One lookup + a
+  // short member loop per kill: no per-tick work.
+  if (m.def.xpPerLv > 0) {
+    const helpers = world.party.sharedXpHelpers(killer, m.x, m.z, credited);
+    if (helpers.length) {
+      const tide = lanternTideXpMult(world.time);
+      for (const q of helpers) {
+        const share = Math.round(killXp(m.def.xpPerLv, m.lv, q.lv) * tide * KILL_XP_SHARE);
+        if (share < 1) continue;
+        grantXp(world, q, share, "kill");
+        world.party.noteSharedXp(q, share); // quiet, rate-limited "Shared hunt: +N XP"
+      }
+    }
+  }
   if (m.def.type === "stone_guardian") world.sysAll(`${m.def.name} has been defeated by ${killer.n}!`);
 }
 
@@ -174,6 +231,7 @@ export function killPlayer(world: World, p: Player, killerId?: number) {
 /** `src`: "kill" | "quest" (default) | "daily". Daily-claim XP does not count towards the "earn XP" daily. At the cap nothing is stored, but the amount still counts for that daily. */
 export function grantXp(world: World, p: Player, amount: number, src: "kill" | "quest" | "daily" = "quest") {
   if (p.lv >= MAX_LEVEL) { if (src !== "daily") ecoXp(world, p, amount); return; }
+  const realmBefore = realmForLevel(p.lv);
   p.xp += amount;
   let leveled = false;
   while (p.lv < MAX_LEVEL && p.xp >= xpToNext(p.lv)) {
@@ -187,6 +245,14 @@ export function grantXp(world: World, p: Player, amount: number, src: "kill" | "
   if (leveled) {
     world.emitTo(p, { k: "levelup", lv: p.lv });
     world.sysAll(`${p.n} has reached level ${p.lv}!`);
+    // 0.5.0: a breakthrough is the level-up that crosses into a new cultivation realm (see REALMS in shared/protocol.ts).
+    // The realm's flat max-HP bonus is already part of maxHpFor, so the refresh above is the permanent HP gain.
+    const realmAfter = realmForLevel(p.lv);
+    if (realmAfter.name !== realmBefore.name) {
+      const gained = realmAfter.hpBonus - realmBefore.hpBonus;
+      world.sysTo(p, `Breakthrough! You have entered the ${realmAfter.name} realm. (+${gained} max HP)`);
+      world.sysAll(`${p.n} has broken through to ${realmAfter.name}!`);
+    }
   }
   if (src !== "daily") ecoXp(world, p, amount);
 }

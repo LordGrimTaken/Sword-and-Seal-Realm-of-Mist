@@ -2,9 +2,9 @@ import type { InvItem } from "@shared/protocol";
 import { esc, plain } from "./glyphs";
 import { itemIcon } from "./icons";
 import { audio } from "../audio/instance";
-import { itemInfo, itemTipHtml, RARITY_NAMES, type ItemType } from "./itemtips";
+import { displayInfo, itemInfo, itemTipHtml, sortCategory, sortRarity, type ItemType } from "./itemtips";
 
-type SortMode = "recent" | "name" | "qty" | "rarity";
+type SortMode = "recent" | "name" | "qty" | "rarity" | "smart";
 type Filter = "all" | ItemType;
 const SORTS: Array<[SortMode, string]> = [["recent", "Recent"], ["name", "Name"], ["qty", "Amount"], ["rarity", "Rarity"]];
 const FILTERS: Array<[Filter, string]> = [["all", "All"], ["Material", "Materials"], ["Consumable", "Remedies"], ["Charm", "Charms"], ["Keepsake", "Keepsakes"]];
@@ -111,7 +111,11 @@ export class Bag {
       recent: (a, b) => (this.order.get(b.item) ?? 0) - (this.order.get(a.item) ?? 0),
       name: (a, b) => plain(a.item).localeCompare(plain(b.item)),
       qty: (a, b) => b.qty - a.qty || plain(a.item).localeCompare(plain(b.item)),
-      rarity: (a, b) => itemInfo(b.item).rarity - itemInfo(a.item).rarity || plain(a.item).localeCompare(plain(b.item)),
+      // Rarity ranks equipment by the server's own rarity (authoritative "rare first") and other items by the local notes.
+      rarity: (a, b) => sortRarity(b.item) - sortRarity(a.item) || plain(a.item).localeCompare(plain(b.item)),
+      // Sort: server rarity first (best first), then category (gear, remedies, trinkets, keepsakes, materials), then name.
+      // Uses the server item catalogue where it knows the item; purely a display order, nothing is sent to the server.
+      smart: (a, b) => sortRarity(b.item) - sortRarity(a.item) || sortCategory(a.item) - sortCategory(b.item) || plain(a.item).localeCompare(plain(b.item)),
     };
     l = [...l].sort(by[this.sort]);
     return l;
@@ -135,14 +139,16 @@ export class Bag {
   private render() {
     this.hideTip(); // rows are rebuilt, so a tooltip for a replaced row would be stale
     const total = this.items.reduce((n, i) => n + i.qty, 0);
-    this.headEl.innerHTML = `<span class="brush">Bag</span> <small>${total} item${total === 1 ? "" : "s"}</small><button class="bx" data-a="close" aria-label="Close bag">×</button>`;
+    // The header carries the one-click Sort action: rarity (best first), then category, then name. It is just
+    // another ordering mode, so clicking Recent/Name/... afterwards switches back like any other sort chip.
+    this.headEl.innerHTML = `<span class="brush">Bag</span> <small>${total} item${total === 1 ? "" : "s"}</small><button type="button" class="bsortall" data-sort="smart" aria-pressed="${this.sort === "smart"}" title="Sort by rarity (best first), then category, then name">Sort</button><button class="bx" data-a="close" aria-label="Close bag">×</button>`;
     for (const b of this.el.querySelectorAll<HTMLElement>("[data-sort]")) b.setAttribute("aria-pressed", String(b.dataset.sort === this.sort));
     for (const b of this.el.querySelectorAll<HTMLElement>("[data-filter]")) b.setAttribute("aria-pressed", String(b.dataset.filter === this.filter));
     const vis = this.visible();
     this.listEl.innerHTML = vis.length
       ? vis.map((i) => {
-        const info = itemInfo(i.item);
-        return `<div class="bi${this.fresh.has(i.item) ? " new" : ""}" role="listitem" tabindex="0" data-item="${esc(i.item)}" aria-label="${esc(plain(i.item))}, quantity ${i.qty}, ${RARITY_NAMES[info.rarity]} ${info.type}"><div class="bseal r${info.rarity}">${itemIcon(i.item)}</div><div class="bn"><b>${esc(plain(i.item))}</b><small class="brar r${info.rarity}">${"◆".repeat(info.rarity + 1)} ${RARITY_NAMES[info.rarity]}</small></div>${this.fresh.has(i.item) ? '<span class="bnew">NEW</span>' : ""}<div class="bq">×${i.qty}</div></div>`;
+        const info = displayInfo(i.item);
+        return `<div class="bi${this.fresh.has(i.item) ? " new" : ""}" role="listitem" tabindex="0" data-item="${esc(i.item)}" aria-label="${esc(plain(i.item))}, quantity ${i.qty}, ${esc(info.rarityLabel)} ${esc(info.type)}"><div class="bseal r${info.rarity}">${itemIcon(i.item)}</div><div class="bn"><b>${esc(plain(i.item))}</b><small class="brar r${info.rarity}">${"◆".repeat(info.rarity + 1)} ${esc(info.rarityLabel)}</small></div>${this.fresh.has(i.item) ? '<span class="bnew">NEW</span>' : ""}<div class="bq">×${i.qty}</div></div>`;
       }).join("")
       : this.items.length
         ? `<div class="bempty">Nothing matches.<br><small>Clear the search or pick another filter.</small></div>`

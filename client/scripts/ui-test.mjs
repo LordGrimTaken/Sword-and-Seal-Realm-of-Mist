@@ -2,15 +2,15 @@
 // then checks login (v3 password flow), wallet pill, Notice Board, Fen, level cap, NPC dialog, quest tracker, help overlay, tooltips, HUD overlap at two resolutions, 20 Hz input,
 // reconnect after a server restart and console cleanliness. Screenshots -> docs/shots/ui_*.png
 // Run: node client/scripts/ui-test.mjs
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
-const require = createRequire("/opt/npm-tools/node_modules/");
-const { chromium } = require("playwright");
+const require = createRequire(import.meta.url);
+const { chromium } = require("playwright"); // local devDependency: portable (the CI image's /opt/npm-tools path does not exist on Windows)
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
@@ -26,7 +26,8 @@ const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok }); cons
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function startServer() {
-  const p = spawn(path.join(ROOT, "server/node_modules/.bin/tsx"), ["src/server.ts"], {
+  // spawn the real .js entry points through this node binary: the node_modules/.bin shims are POSIX shell scripts and fail on Windows
+  const p = spawn(process.execPath, [path.join(ROOT, "server/node_modules/tsx/dist/cli.mjs"), "src/server.ts"], {
     cwd: path.join(ROOT, "server"), env: { ...process.env, PORT: String(SERVER_PORT), DB_PATH: DB, TEST_MODE: "1" }, stdio: ["ignore", "pipe", "pipe"], detached: true,
   });
   p.log = "";
@@ -39,7 +40,13 @@ async function waitHttp(url, ms = 30000) {
   while (Date.now() - t0 < ms) { try { const r = await fetch(url); if (r.ok || r.status < 500) return; } catch { /* retry */ } await sleep(300); }
   throw new Error("timeout waiting for " + url);
 }
-function killGroup(p, sig) { try { process.kill(-p.pid, sig); } catch { try { p.kill(sig); } catch { /* gone */ } } }
+// POSIX process groups do not exist on Windows, so killing "-pid" there does nothing and leaves the server/vite running
+// (the next suite then fails with EADDRINUSE). taskkill /T ends the process tree on Windows; POSIX keeps the group kill.
+function killGroup(p, sig) {
+  if (!p) return;
+  if (process.platform === "win32") { try { spawnSync("taskkill", ["/pid", String(p.pid), "/T", "/F"], { stdio: "ignore" }); } catch { /* gone */ } return; }
+  try { process.kill(-p.pid, sig); } catch { try { p.kill(sig); } catch { /* gone */ } }
+}
 async function stopAll() {
   for (const p of procs) killGroup(p, "SIGTERM");
   await sleep(800);
@@ -47,7 +54,7 @@ async function stopAll() {
 }
 
 let server = startServer();
-const vite = spawn(path.join(ROOT, "client/node_modules/.bin/vite"), ["--config", "scripts/vite.uitest.config.mjs", "--port", String(CLIENT_PORT), "--strictPort", "--host", "127.0.0.1"], { cwd: path.join(ROOT, "client"), stdio: ["ignore", "pipe", "pipe"], detached: true });
+const vite = spawn(process.execPath, [path.join(ROOT, "client/node_modules/vite/bin/vite.js"), "--config", "scripts/vite.uitest.config.mjs", "--port", String(CLIENT_PORT), "--strictPort", "--host", "127.0.0.1"], { cwd: path.join(ROOT, "client"), stdio: ["ignore", "pipe", "pipe"], detached: true });
 vite.log = ""; vite.stdout.on("data", (d) => (vite.log += d)); vite.stderr.on("data", (d) => (vite.log += d));
 procs.push(vite);
 
@@ -301,12 +308,33 @@ try {
     check("roll covered ~6 units (predicted dash steps)", after.dodge.lastDist > 5.4 && after.dodge.lastDist < 6.6, `${after.dodge.lastDist}u`);
     check("dodge costs Qi on the HUD (about 15 less than a full pool)", minQi < 95 && minQi > 70, `lowest qi after the roll ${minQi}`);
     check("dodge cooldown shown on the dodge slot right after the press", two.s1.cooldownMs > 1000 && two.s1.cooldownMs <= 1500, `${two.s1.cooldownMs} ms left`);
-    await sleep(1800);
-    const pos0 = (await st()).pos;
+    // Idle roll: wait for the cooldown to run out, then for the player to be genuinely still, so a multi-second
+    // software-GL frame stall cannot leave the sampled baseline mid-reconcile. After the key press, wait for the
+    // roll to register and the dash to land before measuring the displacement.
+    await page.waitForFunction(() => window.__jz.state.dodge.cooldownMs === 0, null, { timeout: 30000, polling: 200 });
+    const stillPos = async () => {
+      let prev = null;
+      for (let i = 0; i < 80; i++) {
+        const q = await st();
+        if (q.hp > 0 && prev && Math.abs(q.pos.x - prev.x) < 0.02 && Math.abs(q.pos.z - prev.z) < 0.02) return q;
+        prev = q.pos;
+        await sleep(150);
+      }
+      return st();
+    };
+    const pos0 = (await stillPos()).pos;
     await page.keyboard.press("Space");
-    await sleep(2500);
-    const stN = await st();
-    check("idle roll goes along the facing; server and prediction agree afterwards (no snap)", stN.dodge.rolls === after.dodge.rolls + 1 && Math.hypot(stN.pos.x - pos0.x, stN.pos.z - pos0.z) > 4.5 && stN.predErr < 1.5, `moved ${Math.hypot(stN.pos.x - pos0.x, stN.pos.z - pos0.z).toFixed(1)}u predErr ${stN.predErr}`);
+    // the key press can queue behind a stalled frame: wait for the roll counter, then for the dash to finish and the
+    // prediction to reconcile before taking the settled position.
+    await page.waitForFunction((r0) => window.__jz.state.dodge.rolls === r0 + 1, after.dodge.rolls, { timeout: 30000, polling: 200 }).catch(() => {});
+    let stN = await st();
+    let moved = Math.hypot(stN.pos.x - pos0.x, stN.pos.z - pos0.z);
+    for (let i = 0; i < 100 && !(stN.dodge.rolls === after.dodge.rolls + 1 && !stN.dodge.rolling && moved > 4.5 && stN.predErr < 1.5); i++) {
+      await sleep(200);
+      stN = await st();
+      moved = Math.hypot(stN.pos.x - pos0.x, stN.pos.z - pos0.z);
+    }
+    check("idle roll goes along the facing; server and prediction agree afterwards (no snap)", stN.dodge.rolls === after.dodge.rolls + 1 && moved > 4.5 && stN.predErr < 1.5, `moved ${moved.toFixed(1)}u predErr ${stN.predErr}`);
     // "Dodged!" feedback comes from the server when i-frames negate a hit
     await page.evaluate(() => window.__jz.inject({ t: "ev", e: { k: "dodged", id: window.__jz.state.myId } }));
     await sleep(250);
@@ -655,26 +683,61 @@ try {
   // every 1/20 s predictor step (0.3 u) must have produced exactly one input message, i.e. a true 20 Hz stream while moving.
   check("every simulated 50 ms step is sent (20 Hz stream)", moved > 1 && Math.abs(sent - expectSteps) / expectSteps < 0.3, `sent=${sent} expected~${expectSteps.toFixed(0)}; page rate ${rate.toFixed(1)} Hz at ${mid.fps} fps`);
 
-  // ---- 6. walk-away -> "Walk closer"
-  let sp = await st();
-  const nd = (q) => Math.min(...q.ents.filter((e) => e.k === "npc").map((e) => Math.hypot(e.x - q.pos.x, e.z - q.pos.z)));
-  let d = nd(sp); // distance to the NEAREST npc (what F targets)
-  if (d < 16) {
-    const away = { w: "s", s: "w", a: "d", d: "a" }[approachKey];
-    await page.keyboard.down(away);
-    for (let i = 0; i < 60 && d < 17; i++) { await sleep(500); sp = await st(); d = nd(sp); }
-    await page.keyboard.up(away);
-    await sleep(300);
-    sp = await st(); d = nd(sp);
+  // ---- 6. far mode -> "Walk closer"
+  // "Walk closer" is the dialog's far mode: it opens when the NPC F targets is beyond TALK_RANGE (14) and stays open
+  // until TALK_RANGE+8 (22); F only targets an NPC within 40 units. The old keyboard walk-away sampled stale positions
+  // (this host's software-GL frames stall for seconds) and could overshoot the 40-unit talk radius, in which case F did
+  // nothing and the previous dialog's text stayed in the DOM. Position deterministically with the TEST_MODE teleport
+  // (already used elsewhere in this suite) and wait for settled state before pressing F.
+  const npcDistance = (q) => Math.min(...q.ents.filter((e) => e.k === "npc").map((e) => Math.hypot(e.x - q.pos.x, e.z - q.pos.z)));
+  const farSpot = async () => {
+    const q = await st();
+    const npcs = q.ents.filter((e) => e.k === "npc");
+    // Elder Lin (and Keeper Fen) use the paper dialog; the other four NPCs open their own content windows instead.
+    const anchor = npcs.find((e) => /Elder Lin/i.test(e.n)) ?? npcs.find((e) => /Fen/i.test(e.n));
+    if (!anchor) return null;
+    const others = npcs.filter((e) => e !== anchor);
+    let best = null;
+    for (let r = 16; r <= 20; r += 0.5) for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      const x = anchor.x + Math.cos(a) * r, z = anchor.z + Math.sin(a) * r;
+      if (Math.abs(x) > 95 || Math.abs(z) > 95) continue;
+      const d = Math.hypot(anchor.x - x, anchor.z - z);
+      const otherMin = Math.min(...others.map((e) => Math.hypot(e.x - x, e.z - z)));
+      const margin = otherMin - d; // F targets the nearest NPC: the anchor must win
+      if (otherMin > d + 1.5 && (!best || margin > best.margin)) best = { x: +x.toFixed(1), z: +z.toFixed(1), margin };
+    }
+    return best;
+  };
+  let farD = 0, farOk = false;
+  const spot = await farSpot();
+  if (spot) {
+    await say(`/testtp ${spot.x} ${spot.z}`);
+    let prev = null;
+    for (let i = 0; i < 120; i++) { // wait for the teleport snapshot and for the player to stand still
+      const q = await st();
+      farD = npcDistance(q);
+      if (q.hp > 0 && prev && Math.abs(q.pos.x - prev.x) < 0.05 && Math.abs(q.pos.z - prev.z) < 0.05 && farD > 14 && farD <= 21.5) { farOk = true; break; }
+      prev = q.pos;
+      await sleep(250);
+    }
   }
-  if (d >= 14.5 && d <= 40) {
+  if (!farOk) {
+    check("out of range shows 'Walk closer' (could not position out of talk range)", false, `d=${farD.toFixed(1)} spot=${JSON.stringify(spot)}`);
+  } else {
+    // F must not merely close an already-open window: close anything left open first
+    for (let i = 0; i < 4; i++) { const q = await st(); if (!q.dialog.open && !q.content?.npcOpen) break; await page.keyboard.press("Escape"); await sleep(200); }
     await page.keyboard.press("f");
-    await sleep(500);
+    const shownFar = await page.waitForFunction(() => {
+      const d = document.getElementById("dialog");
+      const t = d?.innerText ?? "";
+      return d?.classList.contains("show") && /Walk closer/i.test(t) && /units away/.test(t);
+    }, null, { timeout: 30000, polling: 200 }).then(() => true, () => false);
     const far = await page.evaluate(() => document.getElementById("dialog").innerText);
-    check("out of range shows 'Walk closer' with distance", /Walk closer/i.test(far) && /units away/.test(far), JSON.stringify(far.replace(/\n/g, " ").slice(0, 90)));
+    check("out of range shows 'Walk closer' with distance", shownFar && /Walk closer/i.test(far) && /units away/.test(far), JSON.stringify(far.replace(/\n/g, " ").slice(0, 90)) + ` d=${farD.toFixed(1)}`);
     await shot("walk_closer");
     await page.keyboard.press("Escape");
-  } else check("out of range shows 'Walk closer' (could not position)", true, `d=${d.toFixed(1)} skipped`);
+  }
 
   // ---- 7. 1920x1080 layout
   await page.setViewportSize({ width: 1920, height: 1080 });

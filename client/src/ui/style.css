@@ -73,6 +73,7 @@ button { font-family: var(--font-body); }
 .slot .seal { position: absolute; inset: 3px; padding: 5px; background: var(--vermilion); border: 1px solid var(--paper-dark); border-radius: 2px; box-shadow: inset 0 0 0 2px var(--vermilion), inset 0 0 0 3px rgba(242,234,216,.45); }
 .slot.cls-talisman .seal { background: #8e5a1b; }
 .slot.cls-physician .seal { background: #2f7863; }
+.slot.cls-blade .seal { background: #8a3b3b; }
 .slot .cd { position: absolute; inset: 3px; background: conic-gradient(rgba(26,26,31,.78) calc(var(--p, 0) * 1turn), transparent 0); display: grid; place-items: center; color: var(--paper); font-weight: 700; font-size: 17px; text-shadow: 0 0 3px var(--ink), 0 0 3px var(--ink); pointer-events: none; }
 .slot .key { position: absolute; left: -4px; top: -6px; min-width: 16px; height: 16px; padding: 0 3px; background: var(--paper); border: 1px solid var(--ink); border-radius: 2px; font-size: 11px; line-height: 14px; text-align: center; font-weight: 700; }
 .slot .sn { position: absolute; left: -9px; right: -9px; top: 66px; text-align: center; font-size: 9.5px; line-height: 1.1; font-weight: 600; color: var(--ink); }
@@ -199,7 +200,10 @@ button { font-family: var(--font-body); }
 #login label.f { display: block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; color: var(--ink-soft); margin: 10px 0 3px; letter-spacing: 3px; }
 #login input.tx { width: 100%; font-family: var(--font-body); font-size: 16px; padding: 6px 10px; border: 1px solid var(--ink-soft); border-bottom-width: 2px; background: rgba(255,255,255,.4); color: var(--ink); outline: none; user-select: text; -webkit-user-select: text; }
 #login input.tx:focus { border-color: var(--vermilion); background: rgba(255,255,255,.7); }
-#login .classes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+/* four paths of cultivation share one row: a 3-column grid left the fourth class orphaned on a second row and pushed
+   the whole scroll past the bottom edge of 768px-tall windows */
+#login .classes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px; }
+@media (max-width: 700px) { #login .classes { grid-template-columns: repeat(2, 1fr); } }
 #login .cc { cursor: pointer; border: 2px solid var(--paper-dark); background: rgba(255,255,255,.28); padding: 10px 6px 9px; text-align: center; border-radius: 3px; transition: all .15s; position: relative; font-family: var(--font-body); color: var(--ink); }
 #login .cc:hover { border-color: var(--ink-soft); }
 #login .cc.sel { border-color: var(--ink); background: rgba(255,255,255,.65); box-shadow: 0 3px 0 var(--ink); }
@@ -229,6 +233,12 @@ button { font-family: var(--font-body); }
 #prompt { position: absolute; left: 0; top: 0; display: none; white-space: nowrap; background: rgba(26,26,31,.88); color: var(--paper); font-size: 13px; font-weight: 700; padding: 3px 10px 3px 6px; border: 1px solid var(--gold); border-radius: 3px; will-change: transform; animation: bob 1.4s ease-in-out infinite alternate; }
 #prompt kbd { background: var(--gold); color: var(--ink); border-radius: 2px; padding: 0 6px; margin-right: 4px; font-family: var(--font-body); }
 @keyframes bob { from { margin-top: 0; } to { margin-top: -5px; } }
+/* 0.5.0 treasure-cache prompt: same paper-on-ink prompt language as the NPC one, gold key + amber text.
+   Placed/positioned per frame by client/src/models/chest.ts over the nearest ready cache. */
+#chestprompt { position: absolute; left: 0; top: 0; display: none; white-space: nowrap; background: rgba(26,26,31,.88); color: #ffe7b0; font-size: 13px; font-weight: 700; padding: 3px 10px 3px 6px; border: 1px solid var(--gold); border-radius: 3px; box-shadow: 0 0 10px rgba(201,162,39,.35); will-change: transform; animation: bob 1.4s ease-in-out infinite alternate; pointer-events: none; }
+#chestprompt.show { display: block; }
+#chestprompt kbd { background: var(--gold); color: var(--ink); border-radius: 2px; padding: 0 6px; margin-right: 4px; font-family: var(--font-body); }
+html[data-motion="reduced"] #chestprompt { animation: none; }
 #toast { position: absolute; left: 50%; top: 150px; transform: translate(-50%, -12px); opacity: 0; max-width: 520px; padding: 6px 18px; background: rgba(26,26,31,.92); color: var(--paper); border-top: 3px solid var(--vermilion); border-radius: 2px; font-size: 14px; font-weight: 700; transition: opacity .25s, transform .25s; z-index: 12; text-align: center; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 #helpbtn { pointer-events: auto; cursor: pointer; width: 22px; height: 22px; padding: 0; border: 1px solid var(--ink); background: var(--paper-dark); color: var(--ink); font-weight: 700; font-size: 13px; line-height: 20px; border-radius: 2px; }
@@ -646,3 +656,299 @@ html[data-motion="reduced"] #warn.show, html[data-motion="reduced"] #bagbtn.fres
 html[data-motion="reduced"] .slot, html[data-motion="reduced"] #chat { transition: none; }
 html[data-safe="1"] #hurt { display: none !important; }
 html[data-safe="1"] .slot.flash, html[data-safe="1"] .slot.rdy::after { animation: none !important; }
+
+/* ---------- combat log (key C): a small paper scroll of the last blows ---------- */
+#combatlog {
+  left: 18px;
+  bottom: 226px;
+  width: 380px;
+  max-height: 232px;
+  padding: 9px 14px 10px;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 6;
+}
+#combatlog.show { display: flex; animation: clogin .22s cubic-bezier(.2, .9, .3, 1); }
+#combatlog .clh { flex: none; display: flex; align-items: baseline; gap: 8px; border-bottom: 1px solid var(--paper-dark); padding-bottom: 4px; margin-bottom: 5px; }
+#combatlog .clh .brush { font-size: 25px; line-height: 1; color: var(--vermilion); }
+#combatlog .clh small { margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: .6px; color: var(--ink-soft); }
+#combatlog .clrows { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
+#combatlog .clr { flex: none; margin: 1px 0; padding: 1px 0 1px 9px; border-left: 2px solid var(--ink-soft); font-size: 12.5px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#combatlog .clr:nth-last-child(n+5) { opacity: .75; }
+#combatlog .clr.deal { color: var(--ink); }
+#combatlog .clr.take { border-left-color: var(--vermilion); color: #7a2a24; }
+#combatlog .clr.heal { border-left-color: var(--jade); color: #2f7863; }
+#combatlog .clr.crit { border-left-color: var(--gold); color: var(--vermilion); font-weight: 700; }
+#combatlog .clnone { display: none; padding: 12px 4px 14px; text-align: center; font-size: 12px; color: var(--ink-soft); }
+#combatlog.empty .clrows { display: none; }
+#combatlog.empty .clnone { display: block; }
+@keyframes clogin { from { opacity: 0; transform: translateY(10px); } }
+html[data-motion="reduced"] #combatlog.show { animation: none; }
+@media (max-height: 640px) { #combatlog { bottom: 214px; max-height: 176px; } }
+
+/* ---------- quest tracker HUD: persistent side-quest strip under the minimap column ---------- */
+/* Sits in the right-hand 240px column below the main Quest panel, clear of the hotbar, buffs and chat at 1280x720.
+   It is only displayed while at least one accepted side quest is in progress, so an untouched character shows no
+   extra chrome. Loot toasts are z-ordered above it so acquired items stay readable when the two briefly stack. */
+#questtracker {
+  right: 18px;
+  top: 444px;
+  width: 240px;
+  max-height: min(236px, calc(100vh - 468px)); /* short windows clip the tail rather than run off-screen */
+  padding: 7px 12px 8px;
+  display: none;
+  overflow: hidden;
+  z-index: 4;
+}
+#questtracker.show { display: block; animation: qtin .24s cubic-bezier(.2, .9, .3, 1); }
+#questtracker .qth { display: flex; align-items: baseline; gap: 6px; border-bottom: 1px solid var(--paper-dark); padding-bottom: 3px; margin-bottom: 4px; }
+#questtracker .qth .brush { font-size: 21px; line-height: 1; color: var(--vermilion); }
+#questtracker .qth small { margin-left: auto; font-size: 9.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-soft); white-space: nowrap; }
+#questtracker .qtq { padding: 3px 0 4px; border-bottom: 1px dotted var(--paper-dark); }
+#questtracker .qtq:last-child { border-bottom: 0; padding-bottom: 2px; }
+#questtracker .qtq.ready { background: linear-gradient(90deg, rgba(201,162,39,.18), rgba(201,162,39,0)); }
+#questtracker .qtt { font-size: 12.5px; font-weight: 700; line-height: 1.25; }
+#questtracker .qtq.ready .qtt { color: #7a5c00; }
+#questtracker .qtag { margin-left: 5px; font-style: normal; font-size: 9px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: #7a5c00; border: 1px solid var(--gold); border-radius: 2px; padding: 0 3px; white-space: nowrap; }
+#questtracker .qobs { display: flex; flex-wrap: wrap; gap: 1px 9px; margin-top: 2px; }
+#questtracker .qobj { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; font-size: 11px; line-height: 1.35; color: var(--ink-soft); }
+#questtracker .qobj b { flex: none; width: 9px; font-size: 10px; color: var(--jade); }
+#questtracker .qobj > .qot { min-width: 0; overflow-wrap: anywhere; }
+#questtracker .qobj i { flex: none; font-style: normal; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+#questtracker .qobj.ok, #questtracker .qobj.ok i { color: #2f7863; }
+#questtracker .qtmore { margin-top: 3px; font-size: 9.5px; letter-spacing: .5px; text-align: right; color: var(--ink-soft); }
+#questtracker .qtmore:empty { display: none; }
+@keyframes qtin { from { opacity: 0; transform: translateY(-5px); } }
+html[data-motion="reduced"] #questtracker.show { animation: none; }
+/* Loot toasts (transient) stay readable when they stack over the persistent strip on the right edge. */
+#loot { z-index: 6; }
+
+/* ---------- combat feedback: vermilion ink at the screen edge (damage flash + low-health breath) ---------- */
+/* Two full-screen, inert layers inserted as the first children of #hud by client/src/ui/feedback.ts. Being first
+   in the tree with z-index:auto, they paint over the 3D stage but underneath the paper panels (z-index 5+),
+   nameplates, loot toasts and the connection/death overlays, and their pointer-events:none keeps the whole
+   screen clickable. feedback.ts writes their opacity each frame (time based, not a CSS animation); that is also
+   how reduced motion gets one still edge instead of a pulse. */
+.cbf { position: absolute; inset: 0; pointer-events: none; opacity: 0; will-change: opacity; }
+/* the damage beat: a hot vermilion rim that bites in from every screen edge */
+.cbf-flash { background: radial-gradient(ellipse at 50% 50%, rgba(200, 55, 45, 0) 40%, rgba(200, 55, 45, .16) 68%, rgba(200, 55, 45, .34) 88%, rgba(122, 42, 36, .55) 100%); }
+/* the low-health warning: a wider, softer rim that breathes slowly */
+.cbf-lowhp { background: radial-gradient(ellipse at 50% 50%, rgba(200, 55, 45, 0) 42%, rgba(200, 55, 45, .14) 70%, rgba(122, 42, 36, .42) 100%); }
+/* photosensitivity safe mode draws no hit flash at all (feedback.ts skips it too; this is the CSS backstop) */
+html[data-safe="1"] .cbf-flash { display: none; }
+/* Reduced motion has no CSS animation to stop here: feedback.ts holds a still edge. These rules keep any future
+   transition from sneaking back in for players who asked for calm. */
+html[data-motion="reduced"] .cbf, html[data-safe="1"] .cbf { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) { .cbf { animation: none !important; transition: none !important; } }
+
+/* ---------- session statistics (key V): compact tally of the current connection ---------- */
+/* A small card in the left column, between the buff row and the combat log; hidden until V is pressed. At 1280x720
+   it occupies x 18..268, y 152..255: below the player frame and the buff icons plus their floating timers (which
+   reach y 145), and well clear of the chat (top 512) and hotbar (top ~560). No pointer-events, like other panels. */
+#sessionstats {
+  left: 18px;
+  top: 152px;
+  width: 250px;
+  padding: 7px 12px 8px;
+  display: none;
+  z-index: 5;
+}
+#sessionstats.show { display: block; animation: stin .22s cubic-bezier(.2, .9, .3, 1); }
+#sessionstats .sth { display: flex; align-items: baseline; gap: 6px; border-bottom: 1px solid var(--paper-dark); padding-bottom: 3px; margin-bottom: 4px; }
+#sessionstats .sth .brush { font-size: 20px; line-height: 1; color: var(--vermilion); }
+#sessionstats .sth small { margin-left: auto; font-size: 9.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--ink-soft); white-space: nowrap; }
+#sessionstats .stgrid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; row-gap: 2px; }
+#sessionstats .st { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; min-width: 0; }
+#sessionstats .stl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--ink-soft); }
+#sessionstats .stv { flex: none; font-size: 12.5px; line-height: 1.35; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#sessionstats .st.taken .stv { color: #7a2a24; }
+#sessionstats .st.healed .stv { color: #2f7863; }
+#sessionstats .st.xp .stv { color: #7a5c00; }
+@keyframes stin { from { opacity: 0; transform: translateY(-5px); } }
+html[data-motion="reduced"] #sessionstats.show { animation: none; }
+/* narrow windows move the buff row under the stacked unit frames (see the 960px rule above): keep the card below it */
+@media (max-width: 960px) { #sessionstats { top: 274px; } }
+
+/* ---------- bestiary / codex (Shift+B): the persisted record of every spirit the player has slain ---------- */
+/* A centred paper codex, same weight as the Journal: two columns of entries with the masthead summary above.
+   Hidden until Shift+B; at 1280x720 it occupies x 320..960, y 112..~460, clear of the hotbar, chat and the
+   right-hand HUD column. Plain B stays the Notice Board, hence Shift+B. */
+#bestiary {
+  left: 50%;
+  top: 112px;
+  transform: translateX(-50%);
+  width: min(640px, calc(100vw - 24px));
+  max-height: calc(100vh - 300px);
+  padding: 10px 16px 8px;
+  display: none;
+  flex-direction: column;
+  pointer-events: auto;
+  z-index: 9;
+}
+#bestiary.show { display: flex; animation: btin .22s cubic-bezier(.2, .9, .3, 1); }
+#bestiary .bth { flex: none; display: flex; align-items: baseline; gap: 8px; border-bottom: 1px solid var(--paper-dark); padding-bottom: 5px; margin-bottom: 6px; }
+#bestiary .bth .brush { font-size: 29px; line-height: 1; color: var(--vermilion); }
+#bestiary .bth small { font-weight: 400; font-size: 12px; color: var(--ink-soft); }
+#bestiary .bth .bx { margin-left: auto; width: 22px; height: 22px; padding: 0; border: 1px solid var(--ink); background: var(--paper); border-radius: 2px; cursor: pointer; font-size: 15px; line-height: 18px; }
+#bestiary .bth .bx:hover { background: var(--gold); }
+#bestiary .btsum { flex: none; font-size: 13px; padding: 4px 8px; background: rgba(201,162,39,.16); border-left: 3px solid var(--gold); margin-bottom: 7px; }
+#bestiary .btsum b { font-weight: 700; }
+#bestiary .btgrid { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--paper-dark) transparent; padding-right: 4px; display: grid; grid-template-columns: 1fr 1fr; align-content: start; gap: 6px; }
+#bestiary .btm { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 8px; border: 1px solid var(--paper-dark); border-left: 4px solid var(--jade); border-radius: 3px; background: rgba(255,255,255,.3); }
+#bestiary .btm.unknown { opacity: .6; border-style: dashed; border-left-color: var(--paper-dark); }
+#bestiary .btseal { flex: none; width: 26px; height: 26px; display: grid; place-items: center; background: var(--ink); color: var(--paper); border-radius: 50%; font-weight: 700; font-size: 14px; }
+#bestiary .btseal .ico { width: 18px; height: 18px; fill: currentColor; }
+#bestiary .btm.unknown .btseal { background: transparent; color: var(--ink-soft); border: 1px dashed var(--ink-soft); }
+#bestiary .bti { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#bestiary .bti b { font-size: 12.5px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#bestiary .bti span { font-size: 9.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--ink-soft); }
+#bestiary .btm:not(.unknown) .bti span { color: #2f7863; }
+#bestiary .btk { flex: none; font-style: normal; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--ink); }
+#bestiary .btf { flex: none; text-align: center; font-size: 11px; color: var(--ink-soft); margin-top: 6px; }
+@keyframes btin { from { opacity: 0; transform: translate(-50%, -8px); } }
+html[data-motion="reduced"] #bestiary.show { animation: none; }
+@media (max-height: 640px) { #bestiary { top: 96px; max-height: calc(100vh - 250px); } }
+@media (max-width: 960px) { #bestiary .btgrid { grid-template-columns: 1fr; } }
+
+/* ---------- bag / gear UX: Sort mode, per-slot "Equip Best" and the vs-equipped tooltip block ---------- */
+/* Bag: the header Sort action orders by rarity (best first), then category, then name. It behaves like the sort
+   chips (display-only re-order) and shows its pressed state; the dashed outline marks it as the "best first" pass. */
+#bag .bh .bsortall { margin-left: 8px; padding: 0 7px; cursor: pointer; border: 1px dashed var(--ink-soft); border-radius: 2px; background: transparent; color: var(--ink); font-family: var(--font-body); font-size: 10.5px; font-weight: 700; line-height: 16px; letter-spacing: .5px; }
+#bag .bh .bsortall:hover { background: rgba(26,26,31,.08); }
+#bag .bh .bsortall[aria-pressed="true"] { background: var(--ink); border-style: solid; border-color: var(--ink); color: var(--paper); }
+
+/* Gear panel: each occupied doll slot is now a container with the remove button filling it (data-a=unequip) and an
+   optional compact "Best" upgrade chip in the top-right corner. Empty slots offer a centred "Equip Best" button.
+   The base .cxs / .cxi / .cxn paper-slot layout still comes from content.css; these are additive children. */
+#gearp .cxmain { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 12px 6px 2px; background: none; border: 0; cursor: pointer; color: inherit; font-family: var(--font-body); }
+#gearp .cxmain:hover { filter: brightness(.95); }
+#gearp .cxmain .cxi.big { margin-top: 0; }
+#gearp .cxbest { position: absolute; top: 3px; right: 3px; z-index: 2; cursor: pointer; padding: 0 5px; border: 1px solid var(--ink); border-radius: 2px; background: var(--ink); color: var(--paper); font-family: var(--font-body); font-size: 9px; font-weight: 700; line-height: 14px; letter-spacing: .6px; text-transform: uppercase; }
+#gearp .cxbest:hover { background: var(--vermilion); }
+#gearp .cxs.empty .cxbest { position: static; margin-top: 3px; padding: 0 7px; line-height: 16px; background: var(--vermilion); }
+#gearp .cxs.empty .cxbest:hover { background: var(--ink); }
+
+/* Item tooltip: authoritative gear line and the compact "vs equipped" delta block built by itemtips.ts.
+   Positive deltas are jade, negative ones vermilion (never colour alone: every delta carries its own +/− sign). */
+#itip .tgear { margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--paper-dark); }
+#itip .tgh { font-size: 11px; font-weight: 700; color: var(--ink-soft); letter-spacing: .3px; }
+#itip .tgs { margin-top: 2px; font-size: 11.5px; font-weight: 700; line-height: 1.35; color: #2f7863; }
+#itip .tgc { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1px 8px; margin-top: 3px; }
+#itip .tgcl { flex-basis: 100%; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--ink-soft); }
+#itip .tgc .tup, #itip .tgc .tdown { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#itip .tup { color: #2f7863; }
+#itip .tdown { color: var(--vermilion); }
+#itip .tsame { font-size: 11px; font-style: italic; color: var(--ink-soft); }
+
+/* ---------- party panel (key O): session-only group of up to 5 ---------- */
+/* Anchored at x 330 / y 96: below the target frame (which ends ~78, or ~94 with its status row) and to the right of
+   the player frame + buff row, so it never touches the hotbar (bottom centre), the chat (bottom left), the combat log
+   (bottom-left, top 262 at 720p) or the right-hand minimap/quest column. The card is capped at 5 compact 21 px rows
+   (+ header/footer), keeping its bottom edge under y 262 at 1280x720 and well clear of everything at 1920x1080.
+   Only the buttons accept pointer events (the HUD root is pointer-events:none). */
+#party {
+  left: 330px;
+  top: 96px;
+  width: 240px;
+  padding: 6px 11px 7px;
+  display: none;
+  max-height: 164px;
+  overflow: hidden;
+  z-index: 6;
+}
+#party.show { display: block; animation: ptin .22s cubic-bezier(.2, .9, .3, 1); }
+#party .pyh { display: flex; align-items: baseline; gap: 6px; border-bottom: 1px solid var(--paper-dark); padding-bottom: 3px; margin-bottom: 3px; }
+#party .pyh .brush { font-size: 22px; line-height: 1; color: var(--vermilion); }
+#party .pyh small { margin-left: auto; font-size: 9.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-soft); }
+#party .pyleave {
+  pointer-events: auto; cursor: pointer; margin-left: 2px; padding: 1px 6px;
+  border: 1px solid var(--ink); border-radius: 2px; background: var(--paper-dark); color: var(--ink);
+  font-family: var(--font-body); font-size: 9.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+}
+#party .pyleave:hover { background: var(--vermilion); color: var(--paper); }
+#party .pym { padding: 2px 0 3px; border-bottom: 1px dotted var(--paper-dark); }
+#party .pym:last-of-type { border-bottom: 0; }
+#party .pyr { display: flex; align-items: baseline; gap: 5px; min-width: 0; line-height: 1.25; }
+#party .pylead { flex: none; width: 9px; font-size: 9.5px; color: var(--gold); }
+#party .pyname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 700; }
+#party .pycls { flex: none; font-size: 8.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--vermilion); }
+#party .pylv { flex: none; margin-left: auto; font-size: 10px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+#party .pybar { position: relative; height: 5px; margin-top: 2px; background: var(--ink); border: 1px solid var(--ink); border-radius: 2px; overflow: hidden; }
+#party .pybar i { position: absolute; inset: 0; background: linear-gradient(180deg, #e0493d, var(--vermilion)); transform-origin: left; transition: transform .2s linear; }
+#party .pym.lead .pyname { color: #7a5c00; }
+#party .pyinv {
+  margin-top: 4px; padding: 3px 7px; font-size: 11px; line-height: 1.35;
+  background: linear-gradient(90deg, rgba(201, 162, 39, .2), rgba(201, 162, 39, 0));
+  border-left: 3px solid var(--gold);
+}
+#party .pyinv b { font-weight: 700; }
+#party .pybtns { display: flex; gap: 5px; margin-top: 4px; }
+#party .pybtns button {
+  pointer-events: auto; cursor: pointer; padding: 1px 9px;
+  border: 1px solid var(--ink); border-radius: 2px; background: var(--paper-dark); color: var(--ink);
+  font-family: var(--font-body); font-size: 10.5px; font-weight: 700; letter-spacing: .4px;
+}
+#party .pybtns button[data-a="accept"] { background: var(--vermilion); color: var(--paper); }
+#party .pybtns button:hover { filter: brightness(1.08); }
+#party .pyfoot { margin-top: 3px; text-align: right; font-size: 9.5px; letter-spacing: .3px; color: var(--ink-soft); }
+@keyframes ptin { from { opacity: 0; transform: translateY(-5px); } }
+html[data-motion="reduced"] #party.show { animation: none; }
+/* Short viewports: the combat log rises to ~250, so nudge the card up and clip a little harder in that case. */
+@media (max-height: 640px) { #party { top: 88px; max-height: 150px; } }
+
+/* ---------- 0.5.0 trade window ----------
+   A two-column paper card (you give / you get) that sits in the free centre strip: x 582-1012, y ~196-520 at 1280x720,
+   so it clears the player/target frames + party card (right edge 570), the session stats/combat log (left column), the
+   chat + hotbar (bottom) and the minimap/quest column (starts at 1022). Buttons and the coin input are the only
+   interactive parts (the HUD root is pointer-events:none). */
+#trade { left: 582px; top: 196px; width: 430px; padding: 7px 12px 8px; display: none; z-index: 7; }
+#trade.show { display: block; animation: ptin .22s cubic-bezier(.2, .9, .3, 1); }
+#trade .tdh { display: flex; align-items: baseline; gap: 6px; border-bottom: 1px solid var(--paper-dark); padding-bottom: 3px; margin-bottom: 5px; }
+#trade .tdh .brush { font-size: 22px; line-height: 1; color: var(--vermilion); }
+#trade .tdh small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--ink-soft); }
+#trade .tdcancel, #tradeinv button, #trade .tdready {
+  pointer-events: auto; cursor: pointer; padding: 1px 9px; border: 1px solid var(--ink); border-radius: 2px;
+  background: var(--paper-dark); color: var(--ink); font-family: var(--font-body); font-size: 10.5px; font-weight: 700; letter-spacing: .4px;
+}
+#trade .tdcancel { margin-left: auto; }
+#trade .tdcancel:hover, #tradeinv button:hover, #trade .tdready:hover { filter: brightness(1.08); }
+#trade .tdcols { display: flex; gap: 12px; }
+#trade .tdcol { flex: 1 1 0; min-width: 0; }
+#trade .tdch { font-size: 9.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 2px; }
+#trade .tdrow { display: flex; align-items: baseline; gap: 5px; min-width: 0; padding: 1px 2px; border-bottom: 1px dotted var(--paper-dark); font-size: 12px; line-height: 1.35; }
+#trade .tdrow b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+#trade .tdrow i { margin-left: auto; font-style: normal; font-size: 10.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+#trade .tdrow .tdx { pointer-events: auto; cursor: pointer; margin-left: 2px; padding: 0 4px; border: 0; background: none; color: var(--vermilion); font-size: 12px; font-weight: 700; line-height: 1; }
+#trade .tdrow .tdx:hover { color: var(--ink); }
+#trade .tdempty { font-size: 11px; font-style: italic; color: var(--ink-soft); padding: 2px 0; }
+#trade .tdcoin, #trade .tdline { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 11.5px; }
+#trade .tdline b { margin-left: auto; font-variant-numeric: tabular-nums; }
+#trade .tdcoin input {
+  pointer-events: auto; width: 72px; padding: 1px 4px; border: 1px solid var(--ink); border-radius: 2px;
+  background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 11.5px; font-variant-numeric: tabular-nums;
+}
+#trade .tdbag { margin-top: 6px; border-top: 1px solid var(--paper-dark); padding-top: 4px; }
+#trade .tdchips { display: flex; flex-wrap: wrap; gap: 4px; max-height: 64px; overflow: auto; }
+#trade .tdchip {
+  pointer-events: auto; cursor: pointer; padding: 1px 6px; border: 1px solid var(--ink); border-radius: 2px;
+  background: var(--paper-dark); color: var(--ink); font-family: var(--font-body); font-size: 10.5px; font-weight: 700;
+}
+#trade .tdchip i { font-style: normal; font-weight: 400; color: var(--ink-soft); }
+#trade .tdchip:hover { background: var(--gold); }
+#trade .tdfoot { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+#trade .tdready { padding: 2px 14px; font-size: 11.5px; background: var(--paper-dark); }
+#trade .tdready.on { background: var(--jade); color: var(--paper); border-color: var(--jade); }
+#trade .tdhint { margin-left: auto; text-align: right; font-size: 9.5px; letter-spacing: .3px; color: var(--ink-soft); }
+/* Request card: the same slot in the free centre strip, small enough to never touch the player/target frames. */
+#tradeinv { left: 582px; top: 196px; width: 286px; padding: 7px 12px 8px; display: none; z-index: 7; }
+#tradeinv.show { display: block; animation: ptin .22s cubic-bezier(.2, .9, .3, 1); }
+#tradeinv .tdh { display: flex; align-items: baseline; gap: 6px; border-bottom: 1px solid var(--paper-dark); padding-bottom: 3px; margin-bottom: 5px; }
+#tradeinv .tdh .brush { font-size: 20px; line-height: 1; color: var(--vermilion); }
+#tradeinv .tdh small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--ink-soft); }
+#tradeinv .tdinvbtn { display: flex; gap: 6px; }
+#tradeinv button[data-a="accept"] { background: var(--vermilion); color: var(--paper); border-color: var(--vermilion); }
+#tradeinv .tdhint { margin-top: 4px; text-align: right; font-size: 9.5px; letter-spacing: .3px; color: var(--ink-soft); }
+html[data-motion="reduced"] #trade.show, html[data-motion="reduced"] #tradeinv.show { animation: none; }
+@media (max-height: 640px) { #trade, #tradeinv { top: 170px; } }
+

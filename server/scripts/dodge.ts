@@ -109,7 +109,7 @@ let child: ChildProcess | undefined;
 async function wire() {
   console.log("\n[W] wire: snap qi fields, dodge message, skills carry Qi cost");
   const tmp = mkdtempSync(join(tmpdir(), "jiuzhou-dodge-"));
-  child = spawn(join(ROOT, "node_modules/.bin/tsx"), ["src/server.ts"], { cwd: ROOT, env: { ...process.env, PORT: String(PORT), DB_PATH: join(tmp, "d.db"), NODE_NO_WARNINGS: "1", TEST_MODE: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+  child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], { cwd: ROOT, env: { ...process.env, PORT: String(PORT), DB_PATH: join(tmp, "d.db"), NODE_NO_WARNINGS: "1", TEST_MODE: "1" }, stdio: ["ignore", "pipe", "pipe"] });
   child.stderr!.on("data", (x) => process.stderr.write(`[server!] ${x}`));
   try {
     let up = false;

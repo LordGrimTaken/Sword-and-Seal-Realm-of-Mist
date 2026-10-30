@@ -13,6 +13,7 @@ export const CONTENT_NPCS: Array<{ re: RegExp; key: string; seal: IconName }> = 
   { re: /Gate Warden Wu|\bWu\b/, key: "wu", seal: "gate" },
   { re: /Artisan Tao|\bTao\b/, key: "tao", seal: "stamp" },
   { re: /Peddler Hao|\bHao\b/, key: "hao", seal: "pouch" },
+  { re: /Lantern Keeper Mei|\bMei\b/, key: "mei", seal: "lantern" },
 ];
 export const contentNpcKey = (name: string): string | null => CONTENT_NPCS.find((n) => n.re.test(plain(name)))?.key ?? null;
 
@@ -110,7 +111,7 @@ export class NpcPanel {
     const w = this.st.wallet();
     return `<div class="cxlist">${(d.buy ?? []).map((b) => {
       const info = this.st.items.get(b.item);
-      return `<div class="cxr">${itemSeal(b.item, info?.rarity ?? "fine")}<div class="cxm"><b>${esc(plain(b.item))}</b><span class="cxst">${esc(info?.kind === "gear" ? statText(info.stats) + (info.cls ? ` · ${info.cls === "sword" ? "Sword" : info.cls === "talisman" ? "Talisman" : "Physician"} only` : "") : plain(info?.text ?? ""))}</span></div>
+      return `<div class="cxr">${itemSeal(b.item, info?.rarity ?? "fine")}<div class="cxm"><b>${esc(plain(b.item))}</b><span class="cxst">${esc(info?.kind === "gear" ? statText(info.stats) + (info.cls ? ` · ${info.cls === "sword" ? "Sword" : info.cls === "talisman" ? "Talisman" : info.cls === "blade" ? "Blade" : "Physician"} only` : "") : plain(info?.text ?? ""))}</span></div>
         <span class="cxcost${w.coin >= b.price ? " ok" : ""}">${icon("coin")}${b.price}</span><button type="button" class="btn sm" data-a="buy" data-i="${esc(b.item)}"${w.coin >= b.price ? "" : " disabled"}>Buy</button></div>`;
     }).join("")}</div>`;
   }

@@ -12,7 +12,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { DailyTask, ServerMsg } from "../../shared/protocol.ts";
-import { COIN, DAILY_COUNT, DAILY_POOL, JADE, xpLevelMult, type DailyDef } from "./data.ts";
+import { COIN, DAILY_COUNT, DAILY_POOL, JADE, lanternTideCoinMult, xpLevelMult, type DailyDef } from "./data.ts";
 import { grantXp } from "./game/combat.ts";
 import type { Mob, Player } from "./game/types.ts";
 import { mulberry32, rand } from "./game/util.ts";
@@ -192,7 +192,10 @@ export class Economy {
     const drop = boss || (p.testDrops && process.env.TEST_MODE === "1") || Math.random() < COIN.dropChance;
     if (drop) {
       const grey = Math.max(COIN.minGreyMult, Math.min(1, xpLevelMult(m.lv - lvBefore)));
-      const coin = Math.max(1, Math.round((COIN.base + COIN.perLv * m.lv) * rand(COIN.spread[0], COIN.spread[1]) * grey * (boss ? COIN.bossMult : 1)));
+      const base = Math.max(1, Math.round((COIN.base + COIN.perLv * m.lv) * rand(COIN.spread[0], COIN.spread[1]) * grey * (boss ? COIN.bossMult : 1)));
+      // 0.5.0 Lantern Tide: a bounded +50% on the KILL coin drop only, applied to the already-rounded base (never a new
+      // reward path; boss jade, quest/daily rewards and drop CHANCE are untouched). Math.max(1, ...) keeps it debasement-free.
+      const coin = Math.max(1, Math.round(base * lanternTideCoinMult(w.time)));
       this.addCoin(w, p, coin);
       this.sys(w, p, `You found ${coin} coin.`);
     }

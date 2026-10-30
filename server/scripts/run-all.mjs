@@ -15,7 +15,7 @@ for (const name of list) {
   console.log(`\n=== ${name} ===`);
   const t0 = Date.now();
   const code = await new Promise((res) => {
-    const c = spawn(resolve(ROOT, "node_modules/.bin/tsx"), [`scripts/${name}.ts`], { cwd: ROOT, stdio: "inherit" });
+    const c = spawn(process.execPath, ["--import", "tsx", `scripts/${name}.ts`], { cwd: ROOT, stdio: "inherit" });
     c.on("exit", (k, sig) => res(k ?? (sig ? 128 : 1)));
     c.on("error", () => res(127));
   });
