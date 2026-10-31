@@ -68,6 +68,11 @@ half-configured machine cannot report a deploy that never happened.
 
 ## Current state (2026-10-31)
 
-The live site was last published at version **0.3.0** and predates `/roadmap`, `/changelog`, `/status`, `/press`,
-`/devlog` and the first-hour guide. Version 0.6.0 of the site builds and passes the gate above; it needs a deploy
-with credentials to go live.
+Version **0.6.0** is live at https://swordandseal.com — including `/roadmap`, `/changelog`, `/status`, `/press`,
+`/devlog` and the first-hour guide on `/support`. It was published with `npm run deploy:site` (Worker version
+`af81e6bd-7127-4a7f-aeb8-c694d2a35861`, 1622.60 KiB uploaded / 1051.06 KiB gzip) and confirmed by
+`npm run live:site`.
+
+Before that, the live site had been stuck at 0.3.0 — the deploy was manual and nobody had run it. Use the commands in
+this file for every site change from now on; `check:site` is safe to run anywhere and catches a broken build before
+it can be published.
