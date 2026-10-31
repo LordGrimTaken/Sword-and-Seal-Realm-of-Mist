@@ -16,6 +16,9 @@
     "launcher:dev": "node launcher/scripts/dev.mjs",
     "launcher:dist": "npm --prefix launcher run dist",
     "release": "node scripts/make-release.mjs",
+    "deploy:site": "node scripts/deploy-site.mjs",
+    "check:site": "node scripts/deploy-site.mjs --check",
+    "live:site": "node website/scripts/live-check.mjs",
     "launcher:test": "node --test \"launcher/test/*.test.mjs\""
   }
 }
