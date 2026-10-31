@@ -7,12 +7,27 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-const require = createRequire("/opt/npm-tools/node_modules/");
-const { chromium } = require("playwright");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SHOTS = path.resolve(ROOT, "..", "docs", "shots");
+// Playwright is not a dependency of the site. Borrow an installed copy (the client suite installs one) so this test
+// also runs on Windows, not only on the Linux image that used to hardcode /opt/npm-tools.
+function loadPlaywright() {
+  const candidates = [
+    process.env.PLAYWRIGHT_MODULE_DIR,
+    path.join(ROOT, "node_modules"),
+    path.join(ROOT, "..", "client", "node_modules"),
+    path.join(ROOT, "..", "node_modules"),
+    "/opt/npm-tools/node_modules",
+  ].filter(Boolean);
+  for (const base of candidates) {
+    try { return createRequire(path.join(String(base), "noop.js"))("playwright"); } catch { /* try the next location */ }
+  }
+  console.error("playwright is not installed. Install it once with:\n  npm --prefix client install --no-save --no-package-lock playwright");
+  process.exit(2);
+}
+const { chromium } = loadPlaywright();
 const PORT = 8807, ORIGIN = `http://127.0.0.1:${PORT}`;
-const PAGES = ["/", "/download", "/world", "/classes", "/news", "/support", "/terms", "/privacy", "/eula", "/nope"];
+const PAGES = ["/", "/download", "/world", "/classes", "/news", "/roadmap", "/support", "/terms", "/privacy", "/eula", "/nope"];
 const CJK = /[⺀-鿿가-힯豈-﫿＀-￯　-〿]/;
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log("  FAIL " + m); } return c; };
