@@ -210,6 +210,9 @@ function onMessage(s: Session, data: RawData, isBinary: boolean) {
     case "trade": // 0.5.0 additive: player-to-player trading (every field validated inside TradeManager)
       if (p) world.trade.handle(p, msg);
       return;
+    case "trial": // 0.5.0 P3 additive: the Hollow Trial (range/cooldown/run uniqueness validated inside TrialManager)
+      if (p) world.trial.handle(p, msg);
+      return;
     case "chat":
       if (p && typeof msg.text === "string") world.chat(p, msg.text.slice(0, 400));
       return;

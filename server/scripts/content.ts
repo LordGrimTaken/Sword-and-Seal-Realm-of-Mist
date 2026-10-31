@@ -11,10 +11,12 @@ import type { ClassId, ServerMsg } from "../../shared/protocol.ts";
 import {
   ACHIEVEMENTS, ACH_BY_ID, ALL_TITLES, CLASSES, CONSUMABLES, DAILY_COUNT, DAILY_POOL, GEAR, GEAR_BY_NAME, GEAR_SETS, GEAR_SET_OF, INV, LANTERN_TIDE, MARKET_DAY, MATERIALS, MAX_LEVEL, MIST_SURGE, MOBS, MOB_SPAWNS, NPCS, NPC_SVC, POIS, QUEST_ITEMS, RECIPES, SHOP, SIDE_QUESTS, SIDE_QUEST_BY_ID, TUNING, ZONE,
   itemCatalogue, lanternTideAt, marketDayAt, maxHpFor, mistSurgeAt, recipeOutput, sellPrice, veilPhaseAt,
+  TRIAL, TRIAL_MODIFIERS, trialModifiers, trialReward,
 } from "../src/data.ts";
 import { economy, initEconomy } from "../src/economy.ts";
 import { content, contentHandle, contentLogin, initContent, isAchievementCounter, shopBuyPrice, shopSellPrice } from "../src/game/content.ts";
 import { damageMob, hurtPlayer, killMob, mobAttack } from "../src/game/combat.ts";
+import { TRIAL_MOB_MARKER } from "../src/game/trial.ts";
 import { sumGear } from "../src/game/gear.ts";
 import { addItem, invQty } from "../src/game/inventory.ts";
 import { World } from "../src/game/world.ts";
@@ -354,6 +356,121 @@ function dataChecks() {
     return !!(bride.boss && bossesCounter.includes("hollow_bride"))
       && !!daily && daily.kind === "kill" && daily.target === "hollow_bride" && daily.need === 1 && daily.coin >= 250 && daily.jade >= 3 && daily.xp >= 1200
       && revealHit > base * 0.8 && revealHit < base * 1.25; // the 1.5x reveal is clearly above the plain 26+1.6*12 line
+  })());
+  // ---- 0.5.0 P3: "The Hollow Trial" — a repeatable 5-wave challenge with seeded modifiers.
+  check("Hollow Trial: config is sane (5 waves of existing non-boss mobs, 4 unique modifiers, ranges, timer, cooldown, caps)", (() => {
+    const groups = TRIAL.waveMobs;
+    return TRIAL.waves === 5 && groups.length === TRIAL.waves
+      && groups.every((wave) => wave.length > 0 && wave.every((g) => !!MOBS[g.type] && !MOBS[g.type].boss && g.count >= 1 && g.lv >= 1))
+      && TRIAL_MODIFIERS.length === 4 && new Set(TRIAL_MODIFIERS.map((m) => m.id)).size === 4
+      && TRIAL_MODIFIERS.every((m) => m.name.length > 0 && m.blurb.length > 0 && ["swift", "armoured", "frenzied", "sparse"].includes(m.id))
+      && TRIAL.startRange > 0 && TRIAL.joinRange >= TRIAL.startRange && TRIAL.dropRange > TRIAL.joinRange
+      && TRIAL.timeLimitSec > 0 && TRIAL.cooldownSec > 0
+      && TRIAL.spawnInner > 0 && TRIAL.spawnOuter > TRIAL.spawnInner
+      && TRIAL.baseCoin > 0 && TRIAL.coinPerWave > 0 && TRIAL.baseXp > 0 && TRIAL.xpPerWave > 0
+      && TRIAL.itemChance > 0 && TRIAL.itemChance < 1 && TRIAL.maxCoin > 0 && TRIAL.maxJade > 0 && TRIAL.maxItemChance > 0 && TRIAL.maxItemChance <= 1;
+  })());
+  check("Hollow Trial: the gate sits in a clear meadow — inside the world, far from the plaza, every boss arena, every mob camp and every POI", (() => {
+    const gx = TRIAL.x, gz = TRIAL.z;
+    const bosses = ["stone_guardian", "mist_warden", "hollow_hierophant", "hollow_bride"];
+    const camps = MOB_SPAWNS.filter((g) => !bosses.includes(g.type));
+    const groupDist = (g: (typeof MOB_SPAWNS)[number]) => {
+      if (g.points) return Math.min(...g.points.map(([px, pz]) => Math.hypot(px - gx, pz - gz)));
+      const dx = Math.max(g.x[0] - gx, 0, gx - g.x[1]), dz = Math.max(g.z[0] - gz, 0, gz - g.z[1]);
+      return Math.hypot(dx, dz);
+    };
+    const bossDist = Math.min(...MOB_SPAWNS.filter((g) => bosses.includes(g.type)).map(groupDist));
+    const poiDist = Math.min(...POIS.map((p) => Math.hypot(p.x - gx, p.z - gz)));
+    const plazaDist = Math.hypot(gx - ZONE.spawn.x, gz - ZONE.spawn.z);
+    return Math.abs(gx) < 92 && Math.abs(gz) < 92
+      && plazaDist >= 70 && bossDist >= 55 && poiDist >= 30
+      && camps.every((g) => groupDist(g) >= 20);
+  })());
+  check("Hollow Trial: modifiers are deterministic per seed (1-2 unique, all four reachable over seeds, different seeds vary)", (() => {
+    const valid = new Set(TRIAL_MODIFIERS.map((m) => m.id));
+    const seen = new Set<string>();
+    let varied = false;
+    let first: string[] | null = null;
+    for (let seed = 1; seed <= 60; seed++) {
+      const a = trialModifiers(seed), b = trialModifiers(seed);
+      if (JSON.stringify(a) !== JSON.stringify(b)) return false;
+      if (a.length < 1 || a.length > 2 || new Set(a).size !== a.length || !a.every((m) => valid.has(m))) return false;
+      a.forEach((m) => seen.add(m));
+      if (first && JSON.stringify(first) !== JSON.stringify(a)) varied = true;
+      if (!first) first = a;
+    }
+    return seen.size === 4 && varied && trialModifiers(7).join() === trialModifiers(7).join();
+  })());
+  check("Hollow Trial: clear rewards are bounded and scale with cleared waves + modifier count", (() => {
+    const full = trialReward(TRIAL.waves, 2), easy = trialReward(3, 0), hard = trialReward(TRIAL.waves, 0), zero = trialReward(0, 0);
+    const ints = (v: number) => Number.isInteger(v) && v > 0;
+    return ints(full.coin) && ints(full.xp) && ints(full.jade)
+      && full.coin <= TRIAL.maxCoin && full.jade <= TRIAL.maxJade && full.itemChance <= TRIAL.maxItemChance && full.itemChance > 0
+      && full.coin > hard.coin && hard.coin > easy.coin && easy.coin > zero.coin
+      && full.xp > hard.xp && full.jade > 1 && zero.jade >= 1 && trialReward(99, 9).coin <= TRIAL.maxCoin && trialReward(99, 9).jade <= TRIAL.maxJade;
+  })());
+  check("Hollow Trial: live run — start spawns wave 1, clearing all 5 waves pays out, broadcasts clear and removes every spawn", (() => {
+    const w = new World();
+    const baseline = w.mobs.length;
+    const bot = mk(w, "sword", "TrialTester", 10, { x: TRIAL.x, z: TRIAL.z });
+    const p = bot.p;
+    const jade0 = economy()!.wallet(w, p).jade;
+    w.trial.handle(p, { a: "start" });
+    const first = last(bot, "trial")!.state;
+    const mods = first.modifiers;
+    const expectedCount = (wave: number) => TRIAL.waveMobs[wave].reduce((n, g) => n + (mods.includes("sparse") ? Math.max(1, Math.ceil(g.count * TRIAL.sparseMult)) : g.count), 0);
+    const spawned = w.mobs.filter((m) => (m.summonedBy ?? 0) >= TRIAL_MOB_MARKER);
+    const started = first.active && first.wave === 1 && mods.length >= 1 && mods.length <= 2 && first.participants.includes(p.n) && spawned.length === expectedCount(0);
+    let wavesSeen = 0;
+    for (let wave = 0; wave < TRIAL.waves; wave++) {
+      wavesSeen++;
+      const mobs = w.mobs.filter((m) => (m.summonedBy ?? 0) >= TRIAL_MOB_MARKER && m.ai !== "dead" && m.hp > 0);
+      for (const m of mobs) killMob(w, m, p);
+      w.trial.tick();
+      if (wave < TRIAL.waves - 1) {
+        const st = last(bot, "trial")!.state;
+        if (!st.active || st.wave !== wave + 2 || w.mobs.filter((m) => (m.summonedBy ?? 0) >= TRIAL_MOB_MARKER).length !== expectedCount(wave + 1)) { wavesSeen = -1; break; }
+      }
+    }
+    const end = last(bot, "trial")!.state;
+    const expect = trialReward(TRIAL.waves, mods.length);
+    const jade1 = economy()!.wallet(w, p).jade;
+    const leftovers = w.mobs.filter((m) => (m.summonedBy ?? 0) >= TRIAL_MOB_MARKER).length;
+    const rewardLine = bot.sys.some((t) => t.includes(`You receive ${expect.coin} coin, ${expect.jade} jade and ${expect.xp} XP`));
+    const xpEvent = bot.msgs.some((m) => m.t === "ev" && m.e.k === "xp" && m.e.amount === expect.xp);
+    const refused = (() => { w.trial.handle(p, { a: "start" }); return bot.sys.some((t) => /recharging/i.test(t)); })();
+    return !!started && wavesSeen === TRIAL.waves && end.active === false && end.result === "clear" && end.cooldown > 0
+      && jade1 === jade0 + expect.jade && rewardLine && xpEvent && leftovers === 0 && w.mobs.length === baseline && refused;
+  })());
+  check("Hollow Trial: fail paths (timer expiry, everyone leaving) clean up every spawn and pay nothing", (() => {
+    const old = { mode: process.env.TEST_MODE, time: process.env.TEST_TRIAL_TIME, cd: process.env.TEST_TRIAL_COOLDOWN };
+    process.env.TEST_MODE = "1"; process.env.TEST_TRIAL_TIME = "2"; process.env.TEST_TRIAL_COOLDOWN = "0";
+    try {
+      const w = new World();
+      const baseline = w.mobs.length;
+      const bot = mk(w, "sword", "TrialFailer", 10, { x: TRIAL.x, z: TRIAL.z });
+      const p = bot.p;
+      const jade0 = economy()!.wallet(w, p).jade;
+      w.trial.handle(p, { a: "start" });
+      const started = last(bot, "trial")!.state.active;
+      w.time += 3; // past the 2 s TEST_MODE timer
+      w.trial.tick();
+      const timeout = last(bot, "trial")!.state;
+      const timeoutClean = w.mobs.filter((m) => (m.summonedBy ?? 0) >= TRIAL_MOB_MARKER).length === 0 && w.mobs.length === baseline;
+      const paidNothing = economy()!.wallet(w, p).jade === jade0;
+      // cooldown is 0 under TEST_MODE, so a second run starts; leaving as the only participant fails + cleans it up
+      w.trial.handle(p, { a: "start" });
+      const second = last(bot, "trial")!.state.active;
+      w.trial.handle(p, { a: "leave" });
+      const left = last(bot, "trial")!.state;
+      const leftClean = w.mobs.filter((m) => (m.summonedBy ?? 0) >= TRIAL_MOB_MARKER).length === 0 && w.mobs.length === baseline;
+      return started && timeout.active === false && timeout.result === "fail" && timeoutClean && paidNothing
+        && second && left.active === false && left.result === "fail" && leftClean;
+    } finally {
+      if (old.mode === undefined) delete process.env.TEST_MODE; else process.env.TEST_MODE = old.mode;
+      if (old.time === undefined) delete process.env.TEST_TRIAL_TIME; else process.env.TEST_TRIAL_TIME = old.time;
+      if (old.cd === undefined) delete process.env.TEST_TRIAL_COOLDOWN; else process.env.TEST_TRIAL_COOLDOWN = old.cd;
+    }
   })());
   // ---- 0.5.0: cultivation realms (breakthrough tiers) layered over levels.
   check("realms: ordered by minLv, the first starts at level 1, and every hpBonus is a sane, rising integer", (() => {

@@ -70,6 +70,24 @@ export interface TradeSideView { items: TradeItemView[]; coin: number; ready: bo
 /** Full trade state for one player: the peer's name, their own side and the peer's side. Both sides get the symmetric view. */
 export interface TradeStateView { peer: string; mine: TradeSideView; theirs: TradeSideView }
 
+/** 0.5.0 P3 "The Hollow Trial": the random modifiers a run was rolled with. Ids are stable strings so HUD chips can style them. */
+export type TrialModifierId = "swift" | "armoured" | "frenzied" | "sparse";
+/** The public trial state sent to every player (login sync + every change). `active` false means "at rest"; `cooldown` counts down. */
+export interface TrialStateView {
+  active: boolean;
+  wave: number;            // 1-based current wave while active, 0 when idle
+  waves: number;           // total waves per run (5)
+  modifiers: TrialModifierId[];
+  mobsLeft: number;        // hostiles still standing in the current wave
+  participants: string[];  // display names of the players credited in this run
+  endsIn: number;          // whole seconds left on the run timer (0 when idle)
+  cooldown: number;        // whole seconds until a new run may start (0 = ready)
+  gate: { x: number; z: number };
+  startRange: number;      // how close a player must stand to start a run
+  result?: "clear" | "fail"; // set on the state broadcast that ends a run
+  resultText?: string;       // short human line for the clear/fail toast
+}
+
 export type MobType = "bamboo_spirit" | "fox_spirit" | "stone_guardian" | "jade_serpent" // jade_serpent: pond/bridge mob
   | "lotus_toad" | "stone_hound" | "old_whisker" | "ink_wisp" | "mist_warden" | "thorn_sprite" // 0.4.0 content: passive spitting toad, pack-hunting hound, named rare fox; ink_wisp: floating spirit; mist_warden: second boss; thorn_sprite: passive thorn-spitting sprite
   | "hollow_hierophant" // 0.5.0 content: third boss, a hollow summoner that calls Thorn Sprites out of the reeds
@@ -112,7 +130,10 @@ export type ClientMsg =
   // side only (slot = index into the caller's current bag list, qty = units of that stack, coin = coins offered; qty 0 rejects
   // or removes the named item offer); ready toggles the caller's confirmation. Every field is validated server-side and an
   // offer is only a REFERENCE — nothing leaves a bag until both sides confirm. /trade <name>, /trade accept|decline|cancel also work.
-  | { t: "trade"; a: "request" | "accept" | "decline" | "offer" | "ready" | "cancel"; name?: string; slot?: number; qty?: number; coin?: number };
+  | { t: "trade"; a: "request" | "accept" | "decline" | "offer" | "ready" | "cancel"; name?: string; slot?: number; qty?: number; coin?: number }
+  // 0.5.0 P3 additive (still v3): "The Hollow Trial" wave challenge at its gate. start asks for a run (the server validates
+  // range, cooldown and that no run is live); leave drops out of the current run. The state is pushed on login + every change.
+  | { t: "trial"; a: "start" | "leave" };
 
 // ---------- Server -> Client ----------
 export type ServerMsg =
@@ -154,7 +175,10 @@ export type ServerMsg =
   // 0.5.0 player trading, additive (still v3): the full two-sided trade state, sent to BOTH traders on every change and once
   // after login (state null = not trading). `invitedBy` is present only for the player a waiting request is addressed to, so
   // the client can show the accept/decline prompt. Session-only; items stay in the bags until the atomic swap.
-  | { t: "trade"; state: TradeStateView | null; invitedBy?: string };
+  | { t: "trade"; state: TradeStateView | null; invitedBy?: string }
+  // 0.5.0 P3 "The Hollow Trial", additive (still v3): the run state at the trial gate, sent to every player once after login and
+  // on every change (start, wave advance, clear/fail, cooldown tick boundaries). `active` false + `cooldown` is the resting state.
+  | { t: "trial"; state: TrialStateView };
 
 export interface DailyTask {
   id: string; title: string; desc: string;

@@ -514,6 +514,85 @@ export const MOB_SPAWNS: SpawnGroup[] = [
 /** Inventory limits. */
 export const INV = { maxStack: 99, maxSlots: 30 };
 
+// ---------------- 0.5.0 P3: "The Hollow Trial" (repeatable wave challenge with modifiers) ----------------
+/** The random modifiers a trial run can roll. Ids are stable strings (HUD chip styling keys). */
+export type TrialModifierId = "swift" | "armoured" | "frenzied" | "sparse";
+export interface TrialModifierDef {
+  id: TrialModifierId;
+  name: string;   // chip label
+  blurb: string;  // one-line explanation (tooltip + panel)
+}
+export const TRIAL_MODIFIERS: TrialModifierDef[] = [
+  { id: "swift", name: "Swift", blurb: "The hollow dead move 35% faster and recover from swings sooner." },
+  { id: "armoured", name: "Armoured", blurb: "Every foe has 40% more health." },
+  { id: "frenzied", name: "Frenzied", blurb: "Every foe hits 30% harder and attacks sooner." },
+  { id: "sparse", name: "Sparse", blurb: "Fewer foes stand in each wave (but each one still counts)." },
+];
+
+/** The trial gate ("the Hollow Gate") sits in the open meadow between the bamboo grove and the fox hills.
+ *  Clearances (checked by content.ts): 98 from the plaza spawn, 67 from the Stone Guardian arena, >= 55 from every other
+ *  boss arena, 24 from the nearest mob-spawn box/point, 43 from the nearest place of interest, terrain slope 0.11, h 0.04. */
+export const TRIAL = {
+  id: "hollow_trial",
+  name: "The Hollow Trial",
+  x: 4, z: 18,
+  /** A player must stand this close to the gate to see the prompt / start a run. */
+  startRange: 9,
+  /** Players within this radius when a run starts (or while it runs) join it: a nearby party fights together. */
+  joinRange: 18,
+  /** A participant further than this from the gate drops out of the run. */
+  dropRange: 70,
+  waves: 5,
+  /** Whole-run timer; expiry fails the run. */
+  timeLimitSec: 300,
+  /** No new run may start for this long after one ends (clear or fail): stops infinite farming. */
+  cooldownSec: 180,
+  /** Wave composition: EXISTING mob types only (no bosses), scaled by run level. Each wave is a list of spawn groups. */
+  waveMobs: [
+    [{ type: "bamboo_spirit", count: 3, lv: 14 }],
+    [{ type: "fox_spirit", count: 4, lv: 14 }],
+    [{ type: "stone_hound", count: 3, lv: 15 }, { type: "thorn_sprite", count: 2, lv: 15 }],
+    [{ type: "jade_serpent", count: 2, lv: 16 }, { type: "ink_wisp", count: 3, lv: 16 }],
+    [{ type: "lotus_toad", count: 2, lv: 17 }, { type: "stone_hound", count: 3, lv: 17 }],
+  ] as Array<Array<{ type: MobType; count: number; lv: number }>>,
+  /** Mobs spawn on a ring around the gate (world units). */
+  spawnInner: 5, spawnOuter: 13,
+  /** "Sparse" keeps ceil(count * sparseMult) foes per group (never fewer than 1). */
+  sparseMult: 0.6,
+  baseCoin: 140, coinPerWave: 70,
+  baseXp: 450, xpPerWave: 160,
+  itemChance: 0.35,
+  /** Each modifier adds 18% to the coin/XP clear reward (difficulty pays). */
+  modifierRewardMult: 0.18,
+  /** Hard per-run caps so even a perfect run cannot be farmed for unbounded currency. */
+  maxCoin: 900, maxJade: 5, maxItemChance: 0.6,
+};
+
+/** Deterministic 1-2 modifier roll for a run seed: the same seed always rolls the same modifiers (content-tested). */
+export function trialModifiers(seed: number): TrialModifierId[] {
+  let s = (Math.floor(seed) >>> 0) || 1;
+  const next = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+  const count = next() < 0.45 ? 1 : 2;
+  const pool: TrialModifierId[] = TRIAL_MODIFIERS.map((m) => m.id);
+  const out: TrialModifierId[] = [];
+  while (out.length < count && pool.length) out.push(pool.splice(Math.floor(next() * pool.length), 1)[0]);
+  return out;
+}
+
+/** Clear rewards for a finished run: scaled by waves cleared + modifier count, then clamped to the per-run caps.
+ *  A full 5-wave run with 2 modifiers is the best case; partial clears pay proportionally less and never give the jade bonus. */
+export function trialReward(wavesCleared: number, modifierCount: number): { coin: number; jade: number; xp: number; itemChance: number } {
+  const w = Math.max(0, Math.min(TRIAL.waves, Math.floor(wavesCleared)));
+  const m = Math.max(0, Math.min(TRIAL_MODIFIERS.length, Math.floor(modifierCount)));
+  const scale = 1 + TRIAL.modifierRewardMult * m;
+  const full = w >= TRIAL.waves;
+  const coin = Math.min(TRIAL.maxCoin, Math.round((TRIAL.baseCoin + TRIAL.coinPerWave * w) * scale));
+  const xp = Math.round((TRIAL.baseXp + TRIAL.xpPerWave * w) * scale);
+  const jade = Math.min(TRIAL.maxJade, full ? 2 + m : 1);
+  const itemChance = Math.min(TRIAL.maxItemChance, TRIAL.itemChance + 0.05 * m);
+  return { coin, jade, xp, itemChance };
+}
+
 export const NPCS = [
   { name: "Elder Lin", x: -4, z: -70, r: 0.4 },
   { name: "Lantern Keeper Mei", x: 7, z: -74, r: -0.6 },

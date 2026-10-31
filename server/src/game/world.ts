@@ -12,6 +12,7 @@ import { spawnMobs, updateMob } from "./mobs.ts";
 import { PartyManager } from "./party.ts";
 import { ChestManager } from "./chests.ts";
 import { TradeManager } from "./trade.ts";
+import { TrialManager } from "./trial.ts";
 import type { Entity, Mob, Npc, Player, QuestState } from "./types.ts";
 import { TokenBucket, clamp, dist, isNum, rand, round2 } from "./util.ts";
 
@@ -63,6 +64,8 @@ export class World {
   readonly chests: ChestManager;
   /** 0.5.0 session-only player-to-player trading: requests, two-sided offers, ready flags and the atomic swap. */
   readonly trade: TradeManager;
+  /** 0.5.0 P3 "The Hollow Trial": the repeatable wave challenge at its gate (spawns, waves, modifiers, rewards, cleanup). */
+  readonly trial: TrialManager;
   private nextId = 1;
   /** 0.5.0 Mist Surge: the last window state published to players (start/end are announced only on transitions). */
   private surgeActive = false;
@@ -92,6 +95,7 @@ export class World {
     this.party = new PartyManager(this);
     this.chests = new ChestManager(this);
     this.trade = new TradeManager(this);
+    this.trial = new TrialManager(this);
     for (const n of NPCS) {
       const id = this.allocId();
       const npc: Npc = { id, k: "npc", n: n.name, x: n.x, z: n.z, r: n.r, hp: 9999, mhp: 9999, lv: 60, st: "idle", visible: true,
@@ -136,6 +140,7 @@ export class World {
   removePlayer(p: Player) {
     this.party.onPlayerLeft(p); // 0.5.0: drop party membership / pending invites before the player leaves the world
     this.trade.onPlayerLeft(p); // 0.5.0: end any trade session (references only - nothing was moved) + pending requests
+    this.trial.onPlayerLeft(p); // 0.5.0 P3: drop trial participation (fails + cleans the run if nobody is left)
     this.entities.delete(p.id);
     this.players.delete(p.id);
     this.byName.delete(p.n.toLowerCase());
@@ -268,6 +273,7 @@ export class World {
     if (this.tickNo % 10 === 0) this.party.tick(); // 0.5.0: expire invites + resync member hp/level on the 0.5 s beat
     if (this.tickNo % 10 === 0) this.chests.tick(); // 0.5.0: refill opened treasure caches + push the state when one comes back
     if (this.tickNo % 10 === 0) this.trade.tick(); // 0.5.0: expire trade requests + re-validate live trade sessions (range/items/coin)
+    if (this.tickNo % 10 === 0) this.trial.tick(); // 0.5.0 P3: Hollow Trial waves, timer, participant checks and cleanup
     for (const m of this.mobs) updateMob(this, m, DT);
     this.rebuildGrid();
     if (this.tickNo % SNAP_EVERY === 0) this.sendSnapshots();
@@ -354,6 +360,7 @@ export class World {
       this.party.onLogin(p); // 0.5.0: party state once per connection (guarded internally; usually a solo `members:null`)
       this.chests.onLogin(p); // 0.5.0: the fixed treasure-cache list once per connection
       this.trade.onLogin(p); // 0.5.0: trade state once per connection (usually `state:null`)
+      this.trial.onLogin(p); // 0.5.0 P3: Hollow Trial state once per connection (idle + gate + cooldown, or the live run)
     }
   }
 

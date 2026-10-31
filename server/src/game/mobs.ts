@@ -5,8 +5,8 @@ import type { Mob, Player } from "./types.ts";
 import type { World } from "./world.ts";
 import { clamp, dist, mulberry32, rand } from "./util.ts";
 
-/** Build one mob from its definition. Shared by the initial spawn pass and by boss summons (0.5.0). */
-function makeMob(world: World, def: MobDef, x: number, z: number, lv: number, r = 0): Mob {
+/** Build one mob from its definition. Shared by the initial spawn pass, boss summons (0.5.0) and the P3 Hollow Trial. */
+export function makeMob(world: World, def: MobDef, x: number, z: number, lv: number, r = 0): Mob {
   const hp = def.hpBase + def.hpPerLv * lv;
   const m: Mob = {
     id: 0, k: "mob", n: def.name, x, z, r, hp, mhp: hp, lv, st: "idle",

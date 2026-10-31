@@ -22,6 +22,7 @@ import type { CombatFeedback } from "../ui/feedback";
 import type { SessionStatsPanel } from "../ui/stats";
 import type { PartyPanel } from "../ui/party";
 import type { TradePanel } from "../ui/trade";
+import type { TrialUi } from "../ui/trial";
 import type { WhatsNewPanel } from "../ui/whatsnew";
 import { audio } from "../audio/instance";
 import { PROMPT_RANGE } from "../ui/dialog";
@@ -188,6 +189,8 @@ export class Game {
   party: PartyPanel | null = null;
   /** 0.5.0 client-only trade window (created and attached by main.ts): two-sided offers from the server `trade` message. */
   trade: TradePanel | null = null;
+  /** 0.5.0 P3 client-only trial HUD (created and attached by main.ts): wave, modifiers, timer + the gate prompt. */
+  trial: TrialUi | null = null;
   /** Client-only "What's new" / patch-notes window (created by main.ts; auto-shown once per bundled version, reopenable from the version chip and F1). */
   whatsNew: WhatsNewPanel | null = null;
   /** 0.5.0 treasure caches: procedural chests placed from the dedicated `chests` message + the F interact prompt. */
@@ -224,6 +227,10 @@ export class Game {
   }
   /** The bag the trade panel offers from (same order as the server's slot references). */
   tradeBag() { return this.hud.bag.list; }
+  /** 0.5.0 P3 trial: start/leave the Hollow Trial; the server validates range, cooldown and run uniqueness. */
+  sendTrial(a: "start" | "leave"): void { this.net.send({ t: "trial", a }); }
+  /** Ground height at a world position (used by world-space prompts such as the trial gate). */
+  heightAt(x: number, z: number): number { return this.world.heightAt(x, z); }
   /** Read-only snapshot for the debug surface (window.__jz.pet). */
   petDebug(): PetDebug {
     return this.pet?.debug() ?? { enabled: false, visible: false, x: 0, y: 0, z: 0, bob: 0, glow: 0 };
@@ -474,6 +481,10 @@ export class Game {
       case "trade":
         // additive (0.5.0): the server-authoritative two-sided trade state (null = not trading) drives the trade window.
         this.trade?.set(m);
+        break;
+      case "trial":
+        // additive (0.5.0 P3): the Hollow Trial state (login sync + every change) drives the trial panel + gate prompt.
+        this.trial?.set(m);
         break;
       case "error":
         this.lastError = m.msg;
@@ -829,11 +840,12 @@ export class Game {
     }
     return best;
   }
-  /** F interact (0.5.0): open a ready treasure cache in reach if there is one, otherwise speak to the nearest NPC. */
+  /** F interact (0.5.0): start the Hollow Trial at its gate, else open a ready treasure cache, else speak to the nearest NPC. */
   private interact() {
     if (this.hud.chatFocused) return;
     const me = this.ents.map.get(this.myId);
     if (!me || me.dead) return;
+    if (this.trial?.tryStart(this.vis.x, this.vis.z)) { audio.ui("open"); return; }
     const chest = this.chests.nearestReady(this.vis.x, this.vis.z);
     if (chest) {
       this.net.send({ t: "openchest", id: chest });
@@ -1162,6 +1174,9 @@ export class Game {
 
     // ---- client-only treasure caches: lid/glow animation + the "F Open cache" prompt over the nearest ready chest
     this.chests.update(dt, this.camera, this.vis.x, this.vis.z, !dead && !this.hud.chatFocused);
+
+    // ---- 0.5.0 P3 Hollow Trial: timer bar/text refresh + the "F Start the Hollow Trial" gate prompt
+    this.trial?.update(this.camera, this.vis.x, this.vis.z, !dead && !this.hud.chatFocused);
 
     // ---- client-only spirit companion: trails the local player with a soft lag (purely local, never networked)
     if (me) this.pet?.update(dt, this.vis.x, me.y, this.vis.z, moving ? this.myFacing : me.s.r, settings.get().reduceMotion);

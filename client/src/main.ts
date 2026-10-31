@@ -16,6 +16,7 @@ import { CombatFeedback } from "./ui/feedback";
 import { SessionStatsPanel } from "./ui/stats";
 import { PartyPanel } from "./ui/party";
 import { TradePanel } from "./ui/trade";
+import { TrialUi } from "./ui/trial";
 import releases from "./data/releases.json";
 import { WhatsNewPanel, type Release } from "./ui/whatsnew";
 import { detectLauncher, isKnownCharacter, rememberCharacter, type LauncherCtx } from "./net/launcher";
@@ -266,6 +267,25 @@ function attachTrade(g: Game): void {
   tradeCleanup = () => { panel.dispose(); tradeCleanup = null; };
 }
 
+/** Removes the current session's trial HUD; its elements live inside the HUD root, which the Game clears on dispose. */
+let trialCleanup: (() => void) | null = null;
+
+/**
+ * 0.5.0 P3 "The Hollow Trial" HUD (created and attached here, state driven by the server `trial` message): the compact
+ * wave/modifier/timer card shown during a run plus the world-space prompt over the fixed trial gate. The client only sends
+ * start/leave; the server owns range, cooldown, wave spawning, rewards and cleanup.
+ */
+function attachTrial(g: Game): void {
+  trialCleanup?.();
+  const ui = new TrialUi(g.hudRoot, {
+    send: (a) => g.sendTrial(a),
+    toast: (msg) => g.toast(msg),
+    heightAt: (x, z) => g.heightAt(x, z),
+  });
+  g.trial = ui;
+  trialCleanup = () => { ui.dispose(); trialCleanup = null; };
+}
+
 /** Removes the current session's "What's new" window; the element lives inside the HUD root the Game clears on dispose. */
 let whatsNewCleanup: (() => void) | null = null;
 /** localStorage key holding the bundled version whose "What's new" window the player has already seen. */
@@ -317,6 +337,7 @@ async function enter(v: LoginValues, auto = false): Promise<void> {
     attachPet(g);
     attachParty(g);
     attachTrade(g);
+    attachTrial(g);
     attachWhatsNew(g);
     wire(g, net, v);
   } catch (e) {
@@ -365,12 +386,13 @@ function wire(g: Game, net: NetClient, v: LoginValues) {
       g.bestiary?.clear(); // ...and the codex waits for the new login's `best` (the persisted counts come back with it)
       g.party?.clear(); // ...and no stale party rows/invite until the new login's party state arrives
       g.trade?.clear(); // ...and no stale trade window until the new login's trade state arrives
+      g.trial?.clear(); // ...and no stale trial card/prompt until the new login's trial state arrives
       wire(g, res.net, v);
     })();
   };
   g.onExit = () => { cancelled = true; g.dispose(); game = null; liveNet = null; net.close(); login.show(); login.error("Returned to the login screen."); };
   const exit = g.onExit;
-  g.onExit = () => { combatLogCleanup?.(); statsCleanup?.(); bestiaryCleanup?.(); petCleanup?.(); mountCleanup?.(); partyCleanup?.(); tradeCleanup?.(); whatsNewCleanup?.(); exit(); };
+  g.onExit = () => { combatLogCleanup?.(); statsCleanup?.(); bestiaryCleanup?.(); petCleanup?.(); mountCleanup?.(); partyCleanup?.(); tradeCleanup?.(); trialCleanup?.(); whatsNewCleanup?.(); exit(); };
 }
 
 /** Make sure the brush and body faces are loaded before the login screen, banners and in-world signage canvases need them. */

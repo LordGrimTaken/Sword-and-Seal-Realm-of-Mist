@@ -995,3 +995,33 @@ html[data-motion="reduced"] #whatsnew.show .wnpanel { animation: none; }
 @media (prefers-reduced-motion: reduce) { #whatsnew.show .wnpanel { animation: none; } }
 @media (max-height: 640px) { #whatsnew .wnpanel { max-height: 92vh; } #verchip { bottom: 24px; } }
 
+
+/* ---------- 0.5.0 P3 "The Hollow Trial" ----------
+   The run card only exists while a wave challenge is live and sits in the free centre strip: x 596-896, y 446-570 at
+   1280x720, i.e. below the trade card (which ends at y 430), above the hotbar (starts at y 571) and clear of the
+   player/target frames, the party card, chat, the combat log and the right-hand minimap/quest column. */
+#trial { left: 596px; top: 446px; width: 300px; padding: 5px 11px 6px; display: none; max-height: 124px; overflow: hidden; z-index: 6; }
+#trial.show { display: block; animation: ptin .22s cubic-bezier(.2, .9, .3, 1); }
+#trial .trh { display: flex; align-items: baseline; gap: 6px; border-bottom: 1px solid var(--paper-dark); padding-bottom: 2px; margin-bottom: 3px; }
+#trial .trh .brush { font-size: 19px; line-height: 1; color: var(--vermilion); }
+#trial .trh small { margin-left: auto; font-size: 9.5px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; color: var(--ink-soft); }
+#trial .trleave { pointer-events: auto; cursor: pointer; padding: 0 7px; border: 1px solid var(--ink); border-radius: 2px; background: var(--paper-dark); color: var(--ink); font-family: var(--font-body); font-size: 9.5px; font-weight: 700; letter-spacing: .4px; }
+#trial .trleave:hover { background: var(--vermilion); color: var(--paper); }
+#trial .trmods { display: flex; flex-wrap: wrap; gap: 4px; min-height: 16px; margin-bottom: 3px; }
+#trial .trmod { padding: 0 6px; border: 1px solid var(--ink); border-radius: 2px; font-size: 9.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--ink); background: var(--paper-dark); cursor: help; }
+#trial .trmod.swift { border-color: #4f8fa5; color: #1f5468; }
+#trial .trmod.armoured { border-color: #8a7a4a; color: #4a3f14; }
+#trial .trmod.frenzied { border-color: var(--vermilion); color: var(--vermilion-dark); }
+#trial .trmod.sparse { border-color: #6d7a52; color: #3c4526; }
+#trial .trmod.none { border-style: dashed; color: var(--ink-soft); }
+#trial .trbar { position: relative; height: 5px; margin: 1px 0 2px; background: var(--ink); border: 1px solid var(--ink); border-radius: 2px; overflow: hidden; }
+#trial .trbar i { position: absolute; inset: 0; background: linear-gradient(180deg, #e0493d, var(--vermilion)); transform-origin: left; }
+#trial .trfoot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+#trial .trtime { font-weight: 700; color: #7a4a2a; }
+#trial .trhint { margin-top: 1px; font-size: 9px; letter-spacing: .2px; color: var(--ink-soft); }
+html[data-motion="reduced"] #trial.show { animation: none; }
+@media (max-height: 640px) { #trial { top: 430px; } }
+#trialprompt { position: absolute; left: 0; top: 0; display: none; white-space: nowrap; background: rgba(26,26,31,.88); color: #ffe7b0; font-size: 13px; font-weight: 700; padding: 3px 10px 3px 6px; border: 1px solid var(--gold); border-radius: 3px; box-shadow: 0 0 10px rgba(201,162,39,.35); will-change: transform; animation: bob 1.4s ease-in-out infinite alternate; pointer-events: none; }
+#trialprompt.show { display: block; }
+#trialprompt kbd { background: var(--gold); color: var(--ink); border-radius: 2px; padding: 0 6px; margin-right: 4px; font-family: var(--font-body); }
+html[data-motion="reduced"] #trialprompt { animation: none; }
