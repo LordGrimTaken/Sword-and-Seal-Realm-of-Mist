@@ -27,7 +27,7 @@ function loadPlaywright() {
 }
 const { chromium } = loadPlaywright();
 const PORT = 8807, ORIGIN = `http://127.0.0.1:${PORT}`;
-const PAGES = ["/", "/download", "/world", "/classes", "/news", "/roadmap", "/support", "/terms", "/privacy", "/eula", "/nope"];
+const PAGES = ["/", "/download", "/world", "/classes", "/news", "/changelog", "/roadmap", "/status", "/press", "/support", "/terms", "/privacy", "/eula", "/nope"];
 const CJK = /[⺀-鿿가-힯豈-﫿＀-￯　-〿]/;
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log("  FAIL " + m); } return c; };

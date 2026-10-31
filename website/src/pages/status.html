@@ -1,0 +1,37 @@
+<!--meta {"title":"Server status | Sword & Seal: Realm of Mist","description":"Live server status for Sword & Seal: Realm of Mist: online state, players connected, round-trip time and the server version, checked every fifteen seconds.","priority":0.5,"nav":"status","scripts":["status"]} -->
+<header class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Live</p>
+    <h1>Server status</h1>
+    <p class="lede">The same heartbeat the launcher and the game use. It is checked again every fifteen seconds while this page is open.</p>
+  </div>
+</header>
+
+<section class="section">
+  <div class="wrap status-page">
+    <div class="status-card" id="status-card" data-state="checking" aria-live="polite">
+      <div class="status-main">
+        <span class="status-dot" aria-hidden="true"></span>
+        <div>
+          <p class="status-label" id="status-label">Checking the server</p>
+          <p class="status-detail" id="status-detail">Asking the game server for a heartbeat.</p>
+        </div>
+      </div>
+      <dl class="status-facts">
+        <div><dt>Players online</dt><dd id="status-players">&mdash;</dd></div>
+        <div><dt>Round trip</dt><dd id="status-latency">&mdash;</dd></div>
+        <div><dt>Server version</dt><dd id="status-version">&mdash;</dd></div>
+        <div><dt>Last checked</dt><dd id="status-checked">&mdash;</dd></div>
+      </dl>
+    </div>
+
+    <div class="status-history">
+      <h2>Recent checks</h2>
+      <p class="muted">One bar per check made while this page is open. Taller means a slower round trip; a red bar means the server did not answer.</p>
+      <div class="status-bars" id="status-bars" role="img" aria-label="Recent server checks"></div>
+      <p class="muted small-note" id="status-history-note">No checks yet.</p>
+    </div>
+
+    <p class="muted small-note">If a check fails, the server may be restarting, down for maintenance, or unreachable from your network. Planned downtime is announced on the <a href="/news">news page</a>. If it looks wrong for a while, the <a href="/support#bugs">support page</a> explains what to send us.</p>
+  </div>
+</section>

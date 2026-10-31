@@ -76,16 +76,19 @@ Points that survived checking against real products and a few written guides —
 
 ### P2 — status and the people behind the game
 
-- [ ] **Status page** (`/status`) — server online, players, latency, last deploy, and a short history strip. It reads
-      the same `/health` endpoint the launcher uses.
+- [x] **Status page** (`/status`) — server online, players, round trip, server version, last checked, and a strip of
+      every check made while the page is open. It polls the same `/health` endpoint the launcher and the site badge use
+      (`website/src/js/status.js`), every 15 s, and fails soft. The header badge now links here.
 - [ ] **Devlog** — short posts with an image each: how a zone, a boss or a sound is made. This is the cheapest way to
       make the site feel alive between updates.
-- [ ] **Press kit** (`/press`) — logo, screenshots, fact sheet, one-paragraph description, contact.
-- [ ] **FAQ and first hour** — account trouble, patching trouble, controls, "why is my frame rate low", "where do I go
-      first"; link the support page.
-- [ ] **Bug report** — a launcher button that writes a report with the launcher log and the last client errors, and a
-      mailto/issue link on the site.
-- [ ] **Download page details** — per-platform checksums, system requirements, and a note that the build is unsigned.
+- [x] **Press kit** (`/press`) — fact sheet, short and long description, six real in-game screenshots free to reuse,
+      seal/wordmark notes, contact and usage rules.
+- [x] **FAQ and first hour** — the FAQ already covered accounts, the launcher, networks, controls and bug reports; this
+      pass adds **"Your first hour"** to `/support#first-hour`: a six-step route from sign-in to the Stone Guardian.
+- [ ] **Bug report** — a launcher button that writes a report with the launcher log and the last client errors
+      (in progress: the launcher builds a diagnostic bundle into `<userData>/report-<timestamp>.txt`).
+- [x] **Download page details** — already present before this pass: per-platform checksums with copy instructions,
+      system requirements, the unsigned-build (SmartScreen/Gatekeeper) notes and a portable build link.
 
 ### P3 — content the roadmap promises
 A second zone, a dungeon with repeatable modifiers, and more boss mechanics. These are game work, not surface work;
