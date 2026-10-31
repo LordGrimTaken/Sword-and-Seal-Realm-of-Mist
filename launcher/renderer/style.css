@@ -200,3 +200,24 @@ a:hover { text-decoration: underline; }
 .reader .sheet-actions { padding: 0 24px; }
 
 @media (prefers-reduced-motion: reduce) { .track.indet i { animation: none !important; } .play, .btn, .ncard { transition: none !important; } }
+
+/* ---------- What's new (shown after an update completes) + the news-header changelog entry point ----------
+   Reuses the ink panels, paper text and gold accents of the rest of the launcher; the card is a centred sheet like the
+   news reader so it never reflows the news column or the primary action at 1100x680. */
+.news-link { margin-left: auto; padding: 2px 0; border: 0; background: none; color: var(--gold-hi); font: 600 9px var(--font-body); letter-spacing: .14em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+.news-link:hover { color: var(--paper); text-decoration: underline; }
+.whatsnew-sheet { width: 540px; max-height: 610px; display: flex; flex-direction: column; padding: 0 0 16px; overflow: hidden; }
+.whatsnew-banner { height: 104px; flex: none; }
+.whatsnew-meta { padding: 14px 24px 0; }
+.whatsnew-meta .chip { font-style: normal; font: 600 8.5px var(--font-body); letter-spacing: .1em; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: var(--gold); color: #1a1a1f; }
+.whatsnew-sheet .sheet-title { padding: 0 24px; margin: 7px 0 4px; font-size: 21px; }
+.whatsnew-sub { padding: 0 24px; margin: 0 0 10px; font-size: 12px; color: var(--text-dim); }
+.whatsnew-body { padding: 0 24px; max-height: 250px; min-height: 0; font-size: 13px; line-height: 1.62; }
+.whatsnew-body p { margin: 0 0 10px; }
+.whatsnew-body ul { margin: 0 0 10px; padding: 0; list-style: none; }
+.whatsnew-body li { position: relative; padding-left: 16px; margin: 0 0 5px; }
+.whatsnew-body li::before { content: ""; position: absolute; left: 3px; top: .62em; width: 5px; height: 5px; background: var(--vermilion-hi); transform: rotate(45deg); }
+.whatsnew-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; padding: 12px 24px 0; border-top: 1px solid var(--line-soft); }
+.changelog-link { padding: 0; border: 0; background: none; color: var(--gold-hi); font: 600 10px var(--font-body); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
+.changelog-link:hover { color: var(--paper); text-decoration: underline; }
+.whatsnew-foot .btn { width: auto; flex: none; }

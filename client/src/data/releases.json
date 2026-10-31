@@ -1,0 +1,191 @@
+[
+  {
+    "version": "0.5.0",
+    "title": "The Hollow expansion",
+    "date": "2026-10-30",
+    "intro": "",
+    "groups": [
+      {
+        "heading": "Classes and combat",
+        "bullets": [
+          "Blade Dancer, a 4th class: a fast melee duelist with its own Dao weapons, crest, glyph, skill icons, cast VFX and audio. Four skills with Qi costs and cooldowns, wired through the same authoritative cast pipeline as the other classes.",
+          "Burn damage-over-time: the Talisman Master's Fire Talisman now ignites its target (3 ticks over 3 s, scaling with level). The burn ticks as ordinary damage events, so it grants threat/XP and can finish a kill. Visible client-side: flame sprites plus a warm emissive pulse on the burning mob, and a \"Burning\" indicator in the target frame, with a clean reset when it expires.",
+          "Qi Elixir consumable: restores 50 Qi (the first way to recover Qi beyond regen). Sold by Peddler Hao and craftable from wisp essence and bamboo fibre.",
+          "Cultivation realms: Qi Condensation, Foundation Establishment, Core Formation, Nascent Soul and Spirit Severing at levels 1/5/10/15/20. Each breakthrough announces in chat and grants a permanent max-HP bonus (the realm name shows in the HUD)."
+        ]
+      },
+      {
+        "heading": "Enemies and bosses",
+        "bullets": [
+          "Ink Wisp (passive spirit, lv 4-6) and Thorn Sprite (passive ranged line-spitter, lv 3-5) mob families, each with its own spawn group, loot and client model.",
+          "Mist Warden, a second boss in the south-east hollow: faster telegraphs, lighter frame than the Stone Guardian.",
+          "Hollow Hierophant, a third boss with a new summon mechanic: every 10 s it summons two Thorn Sprites beside itself (capped, corpse-pruned, cleaned up on death/leash/reset).",
+          "The Hollow Bride, a fourth boss (lv 12, eastern bride-steps) with an invulnerable/vulnerable rhythm: 8 s VEILED (all damage refused, telegraphed kerchief lashes, she drifts and re-targets) alternating with 5 s REVEALED (full damage taken, melee x1.5). Both transitions are announced, the target frame and her model carry the state, and her immunity is re-derived server-side from sim time on every hit.",
+          "Mist Surge world event: every 8 minutes, for 90 s, all mobs deal +20 % damage. The world announces the start and end, the state is sent over the wire (including to players logging in mid-surge), and the HUD shows a countdown banner."
+        ]
+      },
+      {
+        "heading": "Social, travel and world",
+        "bullets": [
+          "Parties (O): session-only groups of up to five with invites (60 s TTL), accept/decline/leave, leader migration, disconnect cleanup and a paper-card party panel; /invite, /accept, /decline and /leave also work as chat commands. Grouping pays: a kill also grants every living party member within 45 u 50 % of their own level-scaled kill XP (loot, coin, jade and quest credit are never duplicated).",
+          "Player-to-player trading: /trade Name opens a two-column window (items + coin, Ready per side) between players within 6 u. Offers are references only until both sides confirm; the swap re-validates from live bags and wallets, applies atomically with rollback, and cancelling / disconnecting / dying / walking apart moves nothing. Equipped items can never be traded, so no dupe or loss path exists.",
+          "Spirit-sword mount (R): ride a procedural ink-wash jian at 1.6x travel speed, server-authoritative (the anti-cheat ceiling rises only while mounted); casting or dying dismounts.",
+          "Spirit companion (P): a cosmetic paper-lantern fox-wisp that glides after the local player with soft damping, persisted in localStorage, calmed by reduced-motion; costs about 4 draw calls.",
+          "Treasure caches: six fixed caches around the valley; F within 3.5 u opens one for 15-30 coin, one or two material stacks and a 20 % chance of fine gear; it refills after 120 s.",
+          "Lantern Tide (world event #2): every 10 minutes, for 2 minutes, kills pay +50 % coin and +25 % XP (gold HUD banner).",
+          "Market Day (world event #3): every 15 minutes, for 3 minutes, Peddler Hao sells 25 % cheaper and pays 50 % more for goods sold to him (paper-red HUD banner); the shift is applied at the till on the listed prices, so the stall is never a coin printer."
+        ]
+      },
+      {
+        "heading": "Content and progression",
+        "bullets": [
+          "Gear set bonuses: five sets (Wanderer, Bamboo Weave, Jade, Houndfang, Thornweave) with 2-piece and 3-piece bonuses applied through the gear summary; the gear panel labels the active set.",
+          "Thornweave set: hood (drop), robe (craft), boots (vendor) with 2pc/3pc bonuses, plus its recipe at Artisan Tao.",
+          "Four quest chains beyond the main chain: \"Wisps of the Hollow\" (Peddler Hao), \"Thorns of the Reed\" (Lantern Keeper Mei, three linked steps), \"The Mist Ward\" (Gate Warden Wu, a post-finale Mist Warden hunt with the \"Mistbreaker\" title) and \"Forge-Sworn\" (Artisan Tao's three linked steps, ending in the Hound-Fang Charm and the \"Forge-Sworn\" title). 16 side quests in total.",
+          "Merit seals expanded from 20 to 30 (415 points, 25 titles), adding bestiary completion, all three bosses, 150 kills, Lantern-Tide kills, master smithing, rare-in-four-slots, set completion and the level-15 realm; completion requirements are computed from the real data sizes so they cannot drift.",
+          "Bestiary / Codex: persisted per-mob kill counts, sent to the client and browsable in a new panel (Shift+B) that shows discovered mobs and \"???\" for the never-slain.",
+          "Daily board expanded from 6 to 11 tasks (Thorn Sprites, Ink Wisps, wisp essence, Mist Warden, Hollow Hierophant), with boss dailies paying a premium."
+        ]
+      },
+      {
+        "heading": "UI / UX",
+        "bullets": [
+          "Combat log (C): recent damage dealt/taken, crits and heals with colour cues.",
+          "Quest tracker: a persistent HUD strip of active side quests and objectives, hidden when empty.",
+          "Session statistics (V): mobs slain, damage dealt/taken, healing, XP and session time; resets on reconnect.",
+          "Combat feedback: a red screen-edge flash when the local player takes damage, plus a slow low-HP pulse (respects reduced-motion and safe-flash settings).",
+          "Bag/gear UX: a smart Sort button, per-slot \"Equip Best\" (only offered when the candidate beats what is worn), and a \"vs equipped\" stat-delta block in gear tooltips."
+        ]
+      },
+      {
+        "heading": "Quality",
+        "bullets": [
+          "README, CHANGELOG and message-format docs brought in line with the build."
+        ]
+      }
+    ],
+    "anchor": "v0-5-0"
+  },
+  {
+    "version": "0.4.0",
+    "title": "Dodge, Qi and gear",
+    "date": "2026-10-29",
+    "intro": "",
+    "groups": [
+      {
+        "heading": "Telegraphs and Guardian phase 3",
+        "bullets": [
+          "Stone Guardian phase 3 (below 25% HP). It cracks open (\"... cracks open - white-hot runes blaze along its body!\"), glows white-hot with glowing fissures, and adds a rotating rune beam: a 28-unit line, 2.8 wide, shown for 0.9 s, then sweeping 90 degrees over 3 s while the Guardian stays rooted; damage ticks every 0.3 s to anyone on the line, so players run around it. A faint ghost line marks where the sweep ends. Banner: \"Rune beam! Run around the sweeping beam\". The boss bar shows a 25% marker and \"Cracked open\".",
+          "Client rendering. vfx.telegraphShape() draws cones, lines and beams in the existing red ink style (terrain-conforming, brush edges, ink flood, hot core for a live beam); the minimap draws the same shapes. Mob swings stay quiet (no gong or shake); boss attacks keep the full effect."
+        ]
+      },
+      {
+        "heading": "Audio and UI/UX (batch 3)",
+        "bullets": [
+          "Mixer. Audio now has dedicated buses (music, amb, sfx, ui) feeding the master chain; Sound tab sliders for master, music, ambience, effects and interface, plus mute, mute-when-in-background and a hover-tick toggle. Ambience (wind, water, bamboo, birds) and music (melody, flute, gong, combat) are now separate streams.",
+          "Sound design. Four pitched click variants, a quiet hover tick (rate limited per element), paper-rustle open/close sounds, a tab sound, a musical error (muted knock plus a low dyad instead of a buzz), a soft cooldown-ready ping, rarity-tiered pickup sounds (common click, uncommon chime, rare guzheng arpeggio, epic gong and bell cascade), and pitch-laddered hit combos (consecutive hits within 1.5 s climb the pentatonic scale).",
+          "Boss music layer. While the boss bar is up, war drums, a low drone and a pipa tremolo join the combat stem; it enters and leaves on a bar line and closes with a cymbal swell (audio.setBoss).",
+          "Accessibility. Text size 100/125/150% for windows, tooltips and chat; chat size and opacity; colour assist for protanopia, deuteranopia and tritanopia (SVG colour-matrix filters on the world and HUD); pattern cues (hatched Qi bar, striped HP bar, minus sign on damage taken, plus sign on heals, warning mark on deadly nameplates); high contrast; reduce motion (defaults from the OS setting); photosensitivity-safe mode (no hit flash); plain heading font; camera shake slider (0 turns shake off, read by FollowCamera.shake); focus rings on every control; hotbar slots are keyboard-focusable buttons with labels; chat, loot and warning regions are ARIA live regions.",
+          "Floating numbers. Separate toggles for damage dealt, damage taken, healing and status text (Dodged!, XP), a size slider, and a simple-crit option without the ink splash.",
+          "Chat. All / Chat / System tabs with unread dots, optional timestamps, font size and background opacity.",
+          "Bag. Search box, sort (recent, name, amount, rarity), type filter chips, rarity labels with diamond pips, and item tooltips (type, rarity, description, use) on hover or keyboard focus.",
+          "World map (N or click the minimap). Full-screen ink-wash parchment map of Cloudmist Valley with fog of war that lifts as you explore (persisted per browser), landmark labels with hover notes, wheel zoom, drag to pan, a legend whose icons differ by shape, and your facing arrow.",
+          "Action bar polish. Slots depress while their key or button is held, a gold ring pulses and a soft chime plays when a skill with a real cooldown comes back, tooltips show a live \"Ready / N s left\" line and a small glossary (Qi, Slow, Guard, Allies).",
+          "Motion. Bag, settings and map windows open with a small damped-spring overshoot (off with Reduce motion)."
+        ]
+      },
+      {
+        "heading": "Content: gear, side quests, crafting, mobs and places",
+        "bullets": [
+          "Potions. Healing Tonic (40 % HP) and Lotus Antidote (cures poison, 15 % HP) share a 15 s cooldown.",
+          "New NPCs. Artisan Tao (crafting) and Peddler Hao (shop: buys materials, potions and spare gear, sells tonics and starter kit) in the plaza, with their own procedural models. Gate Warden Wu now gives the side-quest chain.",
+          "Side quests. Eight tasks in a chain (Walk the Path, Tao's start, toads, masks, fangs, fox, seal, finale) on a 3-objective quest engine (kill, collect, talk, visit, craft), with Accept / Hand in, objective bars and rewards. Journal (key J) lists them.",
+          "Crafting and gathering. Ten recipes turn mob drops (Bamboo Fiber, Fox Tail, Jade Scale, Toad Jelly, Hound Fang, Guardian Core) into potions and gear, including class-specific Houndfang weapons and Guardian's Heart.",
+          "New mobs. Lotus Toad (passive pond-shore mob with a long tongue-line attack, drops Toad Jelly), Stone Hound (packs of three in the northern foothills; one calling for help pulls the pack, cone bite), and a rare roaming mini-boss, Old Whisker (grey Fox Spirit, 700 HP, long respawn, drops Silver Tail Cloak and a Hollow Seal Fragment). Fox Spirits can drop Fox-Fur Boots.",
+          "Merit seals and titles. Twenty merit seals across five categories with points; some award a title that is shown under the player nameplate (EntityState.ttl). The Journal has Side Quests, Merit Seals, Titles and Atlas tabs.",
+          "Places of interest. Six discoverable places (Hermit's Rest, Old Waystone, Serpent's Rest, Fox Fire Hollow, Hound Ridge Cairn, Cloudmist Overlook) with stone markers in the valley, a discovery toast, XP and an atlas of found places."
+        ]
+      },
+      {
+        "heading": "Visual art and VFX pass (client only)",
+        "bullets": [
+          "Night life. Fireflies blink over the pond, grove and path at dusk/night, lantern halos and sparks swell at night, and every lantern pools warm light on the stone through an additive ground decal (one instanced draw call) with the three real point lights boosted after dark.",
+          "Post pass. Exponential height fog rebuilt from the depth buffer fills low ground with valley mist, vermilion spot-colour grade, tea-stained ragged scroll edge instead of a plain vignette, time-of-day tint."
+        ]
+      }
+    ],
+    "anchor": "v0-4-0"
+  },
+  {
+    "version": "0.3.0",
+    "title": "English localization",
+    "date": null,
+    "intro": "All player-facing text is now English; the Chinese identity is carried by aesthetics only (ink wash, vermilion seals, brush lettering, paper scrolls).",
+    "groups": [
+      {
+        "heading": "Changes",
+        "bullets": [
+          "New fonts: Ma Shan Zheng (Latin brush script) for display and headings, Noto Serif (Latin 400/600/700) for body text; CSS variables --font-display / --font-body. Noto Serif SC and all Chinese font files were dropped, shrinking the package.",
+          "Hand-drawn vector brush pictograms replace the hanzi seal icons: 12 skill icons, item icons (fibre, fox tail, rune core, scale, vial, lantern, gourd, jade disc, stamp, pouch), class crests and NPC seals.",
+          "Crits are an ink-splash with \"CRIT\"; level-up is \"Level Up\" in brush lettering; quest completion stamps a vermilion \"COMPLETE\" seal; \"Dodged!\" feedback.",
+          "Legibility: level-up lettering sits on an ink scrim with a thicker outline (readable over the gold pillar); the boss warning banner moved below the boss bar.",
+          "Docs: DESIGN.md documents the English-with-Chinese-aesthetic rule and the font decision. Version 0.3.0."
+        ]
+      }
+    ],
+    "anchor": "v0-3-0"
+  },
+  {
+    "version": "0.2.0",
+    "title": "Round 3: merge, QA, desktop delivery",
+    "date": null,
+    "intro": "",
+    "groups": [
+      {
+        "heading": "Docs and fixes",
+        "bullets": [
+          "README rewritten: full controls, slice contents, LAN hosting, ?debug=1, honest known limitations. LICENSE-NOTES refreshed.",
+          "Version 0.2.0 across packages."
+        ]
+      }
+    ],
+    "anchor": "v0-2-0"
+  },
+  {
+    "version": "0.1.0",
+    "title": "Release 0.1.0",
+    "date": null,
+    "intro": "First playable release of JIUZHOU: a Chinese-aesthetic (xianxia, ink-wash) multiplayer fantasy MMO prototype set in Cloudmist Valley.",
+    "groups": [
+      {
+        "heading": "Gameplay",
+        "bullets": [
+          "Three classes (Sword Cultivator, Talisman Master, Physician) with four skills each, cooldowns, ranges, AoE and heals.",
+          "Mobs: Bamboo Spirit, Fox Spirit, Jade Serpent (pond and bridge), and the Stone Guardian boss with a telegraphed ground slam you can dodge.",
+          "Elder Lin's quest chain, now four steps (bamboo, fox tails, the pond, the Stone Guardian), with item rewards.",
+          "Server-side inventory that persists across relogs; materials and quest rewards land in the bag.",
+          "Death and respawn, XP and levels, fixed 20 Hz authoritative server with client prediction and interpolation."
+        ]
+      },
+      {
+        "heading": "Client UI",
+        "bullets": [
+          "Bag window (key I or the bag button): English item names, quantities, \"new\" highlight, seal icons.",
+          "Loot toasts with item seals, boss health bar with a 50 percent phase marker, level-coloured nameplates, jade serpent and boss minimap markers.",
+          "Boss telegraph: ground ring, on-screen warning, minimap danger disc, gong and impact audio, camera shake, \"Dodged\" feedback.",
+          "Paper-scroll HUD: unit frames, hotbar with cooldown numbers, minimap, quest tracker and log, chat, NPC dialog, help and settings.",
+          "Procedural WebAudio: ambient guzheng bed, UI, per-class skills, hits, boss roar, warning gong and slam thud."
+        ]
+      },
+      {
+        "heading": "Engineering",
+        "bullets": [
+          "window.__jz debug surface is only installed with ?debug=1 (or localStorage jz_debug=1).",
+          "Removed committed scratch folders (client/audio-test, client/art-preview).",
+          "Desktop: Electron wrapper plus browser launchers for Windows, macOS and Linux (Windows and macOS installers must be built on those systems)."
+        ]
+      }
+    ],
+    "anchor": "v0-1-0"
+  }
+]

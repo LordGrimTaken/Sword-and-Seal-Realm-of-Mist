@@ -1,5 +1,5 @@
 // In-browser mock of the preload bridge. Active only when the page URL has ?mock=1 and no real bridge exists.
-// Scenes (?scene=): login | loginerror | register | install | downloading (mid-progress, frozen) | verifying | ready | update | offline | launching | outdated
+// Scenes (?scene=): login | loginerror | register | install | downloading (mid-progress, frozen) | verifying | ready | update | offline | launching | outdated | whatsnew (update completes -> What's new card)
 // Extra: &fast=1 speeds up the fake download. Clicking buttons in any scene runs the fake flows (sign in, install, play).
 (() => {
   const q = new URLSearchParams(location.search);
@@ -14,6 +14,12 @@
     { id: "combat-changes", tag: "Coming soon", banner: "blades", title: "Combat changes in 0.4", date: "2026-10-27", body: "x", summary: "Dodge rolls and a Qi pool are on the way. Every skill will cost Qi, so timing matters." },
     { id: "how-to-play", tag: "Guide", banner: "scroll", title: "How to play", date: "2026-10-26", body: "x", summary: "Move with WASD, fight with keys 1 to 4, and talk to villagers with F." },
   ] };
+  // The whatsnew scene pretends an update just finished: the first state is the old install, then it flips to 0.3.0.
+  if (scene === "whatsnew") {
+    news.items.unshift({ id: "update-0-3", tag: "Update 0.3", banner: "lantern", date: "2026-10-30", title: "Lanterns over the valley",
+      body: "The Realm of Mist grows with its biggest update yet.\n\n- Party up with up to five players.\n- Open treasure caches on the roads.\n- Meet the Hollow Bride in the eastern hills.",
+      summary: "Party up, hunt for treasure caches and meet a fourth boss." });
+  }
   const ver = "0.3.0";
   const st = {
     phase: "idle", error: null, offline: false, game: null,

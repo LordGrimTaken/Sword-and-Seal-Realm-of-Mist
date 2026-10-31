@@ -9,6 +9,12 @@
   let paused = false;         // the download was paused by the player (partial files are kept on disk)
   let launchingUntil = 0;     // PLAY clicked: show "Launching" until this time
   let newsItems = [];
+  let allNews = [];           // the full feed (newsItems is only the 4 articles rendered in the column)
+  let knownInstalled = undefined; // installed game version observed before the current state (update/install tracking)
+  let whatsNewVersion = null;     // version currently shown in the What's new card
+  let autoShownFor = null;        // version already auto-announced in this session
+  let pendingWhatsNew = null;     // version waiting for the news feed to finish loading
+  const WHATS_NEW_KEY = "launcher.whatsNew.dismissedVersion";
 
   function h(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   const fmtBytes = (n) => { if (!Number.isFinite(n)) return "?"; const u = ["B", "KB", "MB", "GB"]; let i = 0; while (n >= 1024 && i < 3) { n /= 1024; i++; } return `${n.toFixed(i ? 1 : 0)} ${u[i]}`; };
@@ -17,6 +23,77 @@
   const show = (el, on) => { el.hidden = !on; };
   const setError = (el, msg) => { el.textContent = msg || ""; show(el, !!msg); };
   const pct = (p) => Math.round(Math.max(0, Math.min(1, (p && p.pct) || 0)) * 100);
+
+  // ---------- What's new ----------
+  // Shown once per installed version when an update (or the first install) completes during this session, and
+  // reopenable at any time from the news header. Dismissing remembers the version in localStorage.
+  const readDismissed = () => { try { return localStorage.getItem(WHATS_NEW_KEY) || ""; } catch { return ""; } };
+  const rememberDismissed = (v) => { try { if (v) localStorage.setItem(WHATS_NEW_KEY, v); } catch { /* storage may be unavailable */ } };
+  const versionKey = (v) => String(v || "").replace(/[^0-9a-zA-Z.]+/g, "");
+  /** Does a news tag/title mention this version? Matches "0.3.0", "v0.3.0" and the major.minor form "0.3" (as "Update 0.3"). */
+  function versionMatches(text, version) {
+    const t = String(text || "").toLowerCase();
+    const v = versionKey(version).toLowerCase();
+    if (!t || !v) return false;
+    const minor = v.split(".").slice(0, 2).join(".");
+    return t.includes(v) || t.includes(`v${v}`) || (minor.length > 1 && (t.includes(minor) || t.includes(`v${minor}`)));
+  }
+  /** The news item for a version: its tag/title mentions it, else the newest article. */
+  function pickNewsForVersion(version) {
+    if (!allNews.length) return null;
+    return allNews.find((it) => versionMatches(it.tag, version) || versionMatches(it.title, version)) || allNews[0];
+  }
+  /** {website}/changelog#v<version with dots as dashes>, e.g. https://swordandseal.com/changelog#v0-3-0 */
+  function changelogUrl(version) {
+    const base = String((info && info.config && info.config.website) || "").replace(/\/+$/, "");
+    return `${base}/changelog#v${(versionKey(version) || "latest").replace(/\./g, "-")}`;
+  }
+  /** Shared article body renderer: blank-line paragraphs and "- " bullet lists (used by the reader and What's new). */
+  function renderArticleBody(el, text) {
+    el.textContent = ""; let ul = null;
+    for (const line of String(text || "").split("\n")) {
+      const t = line.trim();
+      if (!t) { ul = null; continue; }
+      if (t.startsWith("- ") || t.startsWith("* ")) { if (!ul) { ul = h("ul"); el.append(ul); } ul.append(h("li", "", t.slice(2))); }
+      else { ul = null; el.append(h("p", "", t)); }
+    }
+  }
+  /** Version the news header's What's new button describes: the installed game, else the latest release. */
+  function whatsNewEntryVersion() {
+    const u = (snap && snap.update) || {};
+    return u.installedVersion || u.latestVersion || "";
+  }
+  function showWhatsNew(version) {
+    const target = versionKey(version) || versionKey(whatsNewEntryVersion());
+    const item = pickNewsForVersion(target);
+    whatsNewVersion = target;
+    const bannerIdx = Math.max(0, allNews.indexOf(item));
+    $("whatsnew-banner").innerHTML = window.Hero.banner(BANNERS.includes(item && item.banner) ? item.banner : BANNERS[bannerIdx % BANNERS.length]);
+    $("whatsnew-tag").textContent = (item && item.tag) || "";
+    show($("whatsnew-tag"), !!(item && item.tag));
+    $("whatsnew-version").textContent = target ? `v${target}` : "";
+    show($("whatsnew-version"), !!target);
+    $("whatsnew-date").textContent = item ? fmtDate(item.date) : "";
+    $("whatsnew-title").textContent = (item && item.title) || "What's new";
+    $("whatsnew-sub").textContent = target ? `The latest changes in v${target}.` : "The latest changes in the realm.";
+    renderArticleBody($("whatsnew-body"), (item && (item.body || item.summary)) || "Fresh changes are on the way.");
+    show($("link-changelog"), !!target);
+    $("whatsnew-body").scrollTop = 0;
+    show($("whatsnew"), true);
+    $("btn-whatsnew-close").focus();
+  }
+  /** Close the card and remember that this version has been seen (so it appears once per version). */
+  function dismissWhatsNew() {
+    if (whatsNewVersion) rememberDismissed(whatsNewVersion);
+    show($("whatsnew"), false);
+  }
+  function maybeAutoWhatsNew(version) {
+    const v = versionKey(version);
+    if (!v || v === autoShownFor || v === versionKey(readDismissed())) return;
+    if (!allNews.length) { pendingWhatsNew = v; return; } // the card needs the news feed; retried when it arrives
+    autoShownFor = v;
+    showWhatsNew(v);
+  }
 
   // ---------- account ----------
   function setMode(m) {
@@ -66,7 +143,9 @@
   function renderNews(n) {
     const list = $("news-list"); list.textContent = "";
     show($("news-badge"), !!(n && n.cached));
-    newsItems = (n?.items || []).slice(0, 4);
+    allNews = (n?.items || []).slice();
+    newsItems = allNews.slice(0, 4);
+    if (pendingWhatsNew) { const v = pendingWhatsNew; pendingWhatsNew = null; maybeAutoWhatsNew(v); }
     if (!newsItems.length) {
       const e = h("div", "news-empty card"); e.append(h("b", "", "No news yet"), document.createTextNode(n?.error ? "The news could not be loaded. It will appear here when you are online." : "Check back soon for events and updates."));
       list.append(e); return;
@@ -89,14 +168,8 @@
     const b = $("reader-banner"); b.innerHTML = window.Hero.banner(BANNERS.includes(it.banner) ? it.banner : BANNERS[i % BANNERS.length]);
     $("reader-tag").textContent = it.tag || ""; show($("reader-tag"), !!it.tag);
     $("reader-date").textContent = fmtDate(it.date); $("reader-title").textContent = it.title;
-    const body = $("reader-body"); body.textContent = ""; let ul = null;
-    for (const line of String(it.body || "").split("\n")) {
-      const t = line.trim();
-      if (!t) { ul = null; continue; }
-      if (t.startsWith("- ") || t.startsWith("* ")) { if (!ul) { ul = h("ul"); body.append(ul); } ul.append(h("li", "", t.slice(2))); }
-      else { ul = null; body.append(h("p", "", t)); }
-    }
-    body.scrollTop = 0; show($("reader"), true); $("btn-reader-close").focus();
+    renderArticleBody($("reader-body"), it.body);
+    $("reader-body").scrollTop = 0; show($("reader"), true); $("btn-reader-close").focus();
   }
 
   // ---------- status ----------
@@ -262,7 +335,10 @@
     else if (r.status === "available") n.textContent = `Version ${r.version} found. Downloading it now; you will be asked to restart.`;
     else n.textContent = "You have the latest launcher.";
   }
-  const closeModals = () => { show($("settings"), false); show($("reader"), false); };
+  const closeModals = () => {
+    if (!$("whatsnew").hidden) { dismissWhatsNew(); return; }
+    show($("settings"), false); show($("reader"), false);
+  };
 
   // ---------- init ----------
   function onLauncherUpdate(d) {
@@ -300,6 +376,10 @@
     $("btn-settings").addEventListener("click", openSettings);
     $("btn-set-cancel").addEventListener("click", () => show($("settings"), false));
     $("btn-reader-close").addEventListener("click", () => show($("reader"), false));
+    $("link-whatsnew").addEventListener("click", () => showWhatsNew(whatsNewEntryVersion()));
+    $("btn-whatsnew-close").addEventListener("click", dismissWhatsNew);
+    $("link-changelog").addEventListener("click", (e) => { e.preventDefault(); if (whatsNewVersion) api.openExternal(changelogUrl(whatsNewVersion)); });
+    $("whatsnew").addEventListener("mousedown", (e) => { if (e.target === $("whatsnew")) dismissWhatsNew(); });
     for (const id of ["settings", "reader"]) $(id).addEventListener("mousedown", (e) => { if (e.target === $(id)) show($(id), false); });
     $("btn-set-save").addEventListener("click", saveSettings);
     $("btn-browse").addEventListener("click", async () => { const p = await api.pickFolder(); if (p) $("set-dir").value = p; });
@@ -309,7 +389,14 @@
     });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModals(); });
 
-    api.on("state", (s) => { snap = s; render(); });
+    // A completed update (or a first install) changes the installed version: announce it once with the What's new card.
+    // knownInstalled starts at the version present when the launcher opened, so an already-installed game never triggers it.
+    api.on("state", (s) => {
+      snap = s; render();
+      const installed = s && s.update ? s.update.installedVersion || null : null;
+      if (knownInstalled !== undefined && installed && installed !== knownInstalled && s.phase !== "updating") maybeAutoWhatsNew(installed);
+      knownInstalled = installed;
+    });
     api.on("progress", onProgress);
     api.on("status", (s) => { if (snap) { snap.status = s; renderStatus(s); if (snap.update?.state === "ready") render(); } });
     api.on("news", renderNews);
@@ -318,6 +405,7 @@
     $("in-remember").checked = info.settings.remember !== false;
     loggedIn = info.session ? info.session.name : null;
     snap = info.snapshot; setMode("login"); renderAccount(); renderStatus(snap.status); render();
+    knownInstalled = (snap && snap.update ? snap.update.installedVersion : null) || null; // update/install baseline
     api.getNews().then(renderNews);
     api.refresh();
     api.refreshStatus();

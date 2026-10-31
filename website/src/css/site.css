@@ -471,3 +471,19 @@ details.faq .answer { padding: 14px 18px 4px; }
 .rm-stamp { position: relative; right: auto; bottom: auto; width: 34px; height: 34px; margin-left: auto; opacity: .9; }
 @media (max-width: 880px) { .rm-head { padding: 18px 18px 14px; } .rm-list { padding: 12px 18px 18px; } }
 @media (print) { .rm-panel, .rm-note { break-inside: avoid; box-shadow: none; } }
+
+/* ---------- changelog ---------- */
+.changelog { max-width: 860px; }
+.changelog-nav { margin: 0 0 30px; font-size: .9rem; }
+.release { position: relative; margin: 0 0 42px; padding: 0 0 0 26px; border-left: 2px solid var(--line); }
+.release:last-child { margin-bottom: 0; }
+.release::before { content: ""; position: absolute; left: -7px; top: 14px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--bg); }
+.release-head h2 { margin: 0 0 10px; font-size: clamp(1.8rem, 3.6vw, 2.4rem); }
+.release-head .eyebrow { margin-bottom: 2px; }
+.release-intro { margin: 0 0 14px; color: var(--muted); }
+.release-group { margin: 0 0 16px; }
+.release-group h3 { margin: 0 0 6px; font-family: var(--font-body); font-size: .78rem; letter-spacing: .18em; text-transform: uppercase; color: var(--gold-deep); }
+.release-group ul { margin: 0; padding-left: 18px; }
+.release-group li { margin: 0 0 6px; font-size: .96rem; line-height: 1.55; }
+.release-group li::marker { color: var(--jade-deep); }
+@media (max-width: 620px) { .release { padding-left: 18px; } }

@@ -80,6 +80,7 @@
     <div class="news-head">
       <h2 class="news-title">News</h2>
       <span id="news-badge" class="badge" hidden>Offline copy</span>
+      <button id="link-whatsnew" class="news-link" type="button" title="What's new in this version">What's new</button>
     </div>
     <div id="news-list" class="news-list"></div>
   </section>
@@ -123,6 +124,26 @@
       <h2 id="reader-title" class="sheet-title"></h2>
       <div id="reader-body" class="reader-body"></div>
       <div class="sheet-actions"><button id="btn-reader-close" class="btn ghost small" type="button">Close</button></div>
+    </div>
+  </div>
+
+  <!-- "What's new" card: shown once after an update completes (or after the first install) and reopenable from the
+       news header. Dismissing it remembers the version in localStorage. -->
+  <div id="whatsnew" class="modal" hidden>
+    <div class="sheet whatsnew-sheet" role="dialog" aria-modal="true" aria-labelledby="whatsnew-title">
+      <div id="whatsnew-banner" class="reader-banner whatsnew-banner"></div>
+      <div class="reader-meta whatsnew-meta">
+        <span id="whatsnew-tag" class="tag"></span>
+        <span id="whatsnew-version" class="chip"></span>
+        <span id="whatsnew-date" class="date"></span>
+      </div>
+      <h2 id="whatsnew-title" class="sheet-title">What's new</h2>
+      <p id="whatsnew-sub" class="panel-sub whatsnew-sub">The latest changes in the launcher and the realm.</p>
+      <div id="whatsnew-body" class="reader-body whatsnew-body"></div>
+      <div class="whatsnew-foot">
+        <button id="link-changelog" class="changelog-link" type="button">Read the full changelog &rarr;</button>
+        <button id="btn-whatsnew-close" class="btn primary small" type="button">Got it</button>
+      </div>
     </div>
   </div>
 

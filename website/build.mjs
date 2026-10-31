@@ -94,43 +94,42 @@ ${layerSvg(4, `<path filter="url(#ink)" d="${ridge(37, 478, 150, 40, 0.35)}" fil
 ${layerSvg(5, `<path d="${ridge(53, 512, 125, 36, 0.4)}" class="front"/><g class="deco5">${[60, 92, 1330, 1368, 1402].map((x, i) => `<path d="M${x} 520 Q${x - 3 + (i % 2) * 6} 440 ${x + 2} 330" stroke="currentColor" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M${x + 1} 470 l16 -10 M${x} 420 l-15 -9 M${x + 2} 370 l14 -9" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round"/>`).join("")}</g>`)}
 </div>`;
 
-/** News seed from CHANGELOG.md (player-facing subset). */
-function changelogNews() {
-  let md = "";
-  try { md = read(path.resolve(ROOT, "..", "CHANGELOG.md")); } catch { return []; }
-  const out = [];
-  const blocks = md.split(/^## /m).slice(1);
-  const dev = /npm |sqlite|workflow|electron-builder|\.cjs|\.mjs|\.ts\b|ui-test|TEST_MODE|bots\.ts|grader|protocol|sandbox|headless|deterministic|assert/i;
-  for (const b of blocks) {
-    const lines = b.split("\n");
-    const heading = lines[0].trim();
-    const m = heading.match(/^v?(\d+\.\d+\.\d+)\s*[—-]?\s*(.*)$/);
-    if (!m) continue;
-    const version = m[1];
-    let title = m[2].replace(/\(.*?\)\s*/g, "").trim() || "Release " + version;
-    title = title.replace(/^./, (c) => c.toUpperCase());
-    const bullets = lines.filter((l) => /^\s*- /.test(l)).map((l) => l.replace(/^\s*- /, "").replace(/`/g, "").replace(/\*\*/g, "").trim())
-      .filter((l) => !dev.test(l)).map((l) => (l.length > 230 ? l.slice(0, l.lastIndexOf(" ", 227)) + "..." : l)).slice(0, 5);
-    const intro = lines.slice(1).find((l) => l.trim() && !l.startsWith("#") && !l.startsWith("-") && !l.startsWith(" "));
-    out.push({ version, title, intro: intro && !dev.test(intro) ? intro.replace(/`/g, "").trim() : "", bullets });
-  }
-  return out;
-}
-const newsSeed = changelogNews();
-const newsDates = { "0.3.0": "2026-10-28", "0.4.0": "2026-10-29" }; // changelog has no dates; unknown ones are omitted
-const newsSeedHtml = newsSeed.map((n) => `
-      <article class="post" id="v${n.version.replace(/\./g, "-")}">
-        <header><p class="eyebrow">Version ${esc(n.version)}${newsDates[n.version] ? ` &middot; <time datetime="${newsDates[n.version]}">${newsDates[n.version]}</time>` : ""}</p>
-        <h2>${esc(n.title)}</h2></header>
-        ${n.intro ? `<p>${esc(n.intro)}</p>` : ""}
-        ${n.bullets.length ? `<ul>${n.bullets.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}
-      </article>`).join("\n");
+// ---------- release notes: one parse feeds the news seed and the /changelog page ----------
+import { parseChangelog, versionAnchor } from "../scripts/release-notes.mjs";
+
+let releases = [];
+try { releases = parseChangelog(read(path.resolve(ROOT, "..", "CHANGELOG.md")), { filterDev: true }); } catch { releases = []; }
+const truncate = (s, n) => (s.length > n ? s.slice(0, s.lastIndexOf(" ", n - 3)) + "..." : s);
+
+const newsSeedHtml = releases.map((r) => {
+  const bullets = r.groups.flatMap((g) => g.bullets).slice(0, 5).map((b) => truncate(b, 230));
+  return `
+      <article class="post" id="${versionAnchor(r.version)}">
+        <header><p class="eyebrow">Version ${esc(r.version)}${r.date ? ` &middot; <time datetime="${r.date}">${esc(r.date)}</time>` : ""}</p>
+        <h2>${esc(r.title)}</h2></header>
+        ${r.intro ? `<p>${esc(truncate(r.intro, 300))}</p>` : ""}
+        ${bullets.length ? `<ul>${bullets.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}
+      </article>`;
+}).join("\n");
+
+const changelogHtml = releases.map((r) => `
+  <article class="release" id="${versionAnchor(r.version)}">
+    <header class="release-head">
+      <p class="eyebrow">Version ${esc(r.version)}${r.date ? ` &middot; <time datetime="${r.date}">${esc(r.date)}</time>` : ""}</p>
+      <h2>${esc(r.title)}</h2>
+    </header>
+    ${r.intro ? `<p class="release-intro">${esc(r.intro)}</p>` : ""}
+    ${r.groups.map((g) => `<section class="release-group">
+      <h3>${esc(g.heading)}</h3>
+      <ul>${g.bullets.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>
+    </section>`).join("\n    ")}
+  </article>`).join("\n");
 
 // ---------- templating ----------
 const getPath = (obj, p) => p.split(".").reduce((o, k) => (o == null ? o : o[k]), obj);
 const partialCache = {};
 const partial = (name) => (partialCache[name] ??= read(path.join(SRC, "partials", name + ".html")));
-const gen = { mountains, news_seed: newsSeedHtml, version: gameVersion, year: new Date().getFullYear(), updated: cfg.lastUpdated };
+const gen = { mountains, news_seed: newsSeedHtml, changelog: changelogHtml, version: gameVersion, year: new Date().getFullYear(), updated: cfg.lastUpdated };
 
 function render(text, vars) {
   for (let pass = 0; pass < 4; pass++) {
