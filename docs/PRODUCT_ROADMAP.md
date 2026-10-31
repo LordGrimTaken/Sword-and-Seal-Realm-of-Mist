@@ -79,8 +79,9 @@ Points that survived checking against real products and a few written guides —
 - [x] **Status page** (`/status`) — server online, players, round trip, server version, last checked, and a strip of
       every check made while the page is open. It polls the same `/health` endpoint the launcher and the site badge use
       (`website/src/js/status.js`), every 15 s, and fails soft. The header badge now links here.
-- [ ] **Devlog** — short posts with an image each: how a zone, a boss or a sound is made. This is the cheapest way to
-      make the site feel alive between updates.
+- [x] **Devlog** (`/devlog`) — three notes from the workshop, each with an in-game capture: painting the valley from seeded noise,
+      designing a boss around its telegraph, and synthesising every sound at runtime. Linked from the footer and the
+      roadmap page.
 - [x] **Press kit** (`/press`) — fact sheet, short and long description, six real in-game screenshots free to reuse,
       seal/wordmark notes, contact and usage rules.
 - [x] **FAQ and first hour** — the FAQ already covered accounts, the launcher, networks, controls and bug reports; this

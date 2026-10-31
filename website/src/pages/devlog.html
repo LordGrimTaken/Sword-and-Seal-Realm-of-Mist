@@ -1,0 +1,57 @@
+<!--meta {"title":"Devlog | Sword & Seal: Realm of Mist","description":"Notes from the workshop: how the valley, the bosses and the sound of Sword & Seal: Realm of Mist are actually made, with in-game captures.","priority":0.5,"nav":"devlog"} -->
+<header class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">From the workshop</p>
+    <h1>Devlog</h1>
+    <p class="lede">Short notes on how a piece of the game is made. Written between versions, not instead of them; the <a href="/changelog">changelog</a> records what shipped, this page records how it got there.</p>
+  </div>
+</header>
+
+<section class="section">
+  <div class="wrap devlog">
+
+    <article class="post-article" id="seed-and-ridge">
+      <div class="post-body">
+        <p class="eyebrow">31 October 2026 &middot; World</p>
+        <h2>Painting a valley with a seed</h2>
+        <p>Cloudmist Valley is not a level someone modelled. It is a few hundred lines of noise: a seeded random number generator walks a ridge line across the sky, pulls it up around a focal point, and closes the shape down into a mountainside. The same generator scatters bamboo, pines and lanterns along the ground it just created, so nothing floats and nothing repeats exactly.</p>
+        <p>The parts you notice are placed by hand. The paifang gate at spawn, the pond with its pagoda, the northern shrine and the drowned circles each sit on terrain chosen for a silhouette. Everything between them is procedural, which is why the valley can be re-seeded in a second and still feel like the same place.</p>
+        <p>The colour is three inks and paper: cold grey-blue for distance, warm paper for lit surfaces, one vermilion accent that only appears where something matters — a gate, a banner, a boss ring.</p>
+      </div>
+      <figure class="post-figure">
+        <a href="{{asset:img/pagoda.webp}}"><img src="{{asset:img/pagoda.webp}}" width="1280" height="720" loading="lazy" alt="Procedural ink-wash ridges with a pagoda on the water, everything seeded from noise."></a>
+        <figcaption>Procedural ridges, hand-placed landmarks.</figcaption>
+      </figure>
+    </article>
+
+    <article class="post-article flip" id="six-seconds">
+      <div class="post-body">
+        <p class="eyebrow">29 October 2026 &middot; Combat</p>
+        <h2>Six seconds of telegraph</h2>
+        <p>A boss attack is written backwards from the dodge. First decide how long the player has to read the ground and roll out of it — about a second for a slam, longer for a beam — then decide what shape tells that story: a ring for a slam, a wedge for a scatter, a line for a lash.</p>
+        <p>The server resolves the hit from the same numbers the client draws. There is no separate "visual" telegraph that lies: the ring you see is the damage shape. The Stone Guardian's third phase is the tutorial for that idea — it opens a rune beam that sweeps 90 degrees, and the beam is just a very large moving wedge with the same code path as a stomp.</p>
+        <p>The result is a fight you can learn without reading a wiki. If you died, the ground told you why.</p>
+      </div>
+      <figure class="post-figure">
+        <a href="{{asset:img/guardian.webp}}"><img src="{{asset:img/guardian.webp}}" width="1280" height="720" loading="lazy" alt="The Stone Guardian winding up with ground telegraphs painted around a player."></a>
+        <figcaption>The ground is the rulebook.</figcaption>
+      </figure>
+    </article>
+
+    <article class="post-article" id="sound-without-files">
+      <div class="post-body">
+        <p class="eyebrow">27 October 2026 &middot; Audio</p>
+        <h2>Sound without files</h2>
+        <p>There are no audio files in the build. Every sound — the wind through the bamboo, the guzheng-style music bed, the crack of a talisman, the click of a menu — is synthesised at runtime by WebAudio from oscillators, filtered noise and short envelopes. A skill sound is a handful of numbers: a pitch, a noise burst with a filter sweep, and a decay curve.</p>
+        <p>That keeps the download small and lets the mix respond to the game: the music bed thins when a boss engages so the fight audio has room, and ambience follows what is near you rather than looping one valley-wide track.</p>
+        <p>It also means the mix is testable. The build renders every sound offline and fails if one comes out silent or clipped.</p>
+      </div>
+      <figure class="post-figure">
+        <a href="{{asset:img/shrine.webp}}"><img src="{{asset:img/shrine.webp}}" width="1280" height="720" loading="lazy" alt="A lantern-lit shrine where ambience layers change as the player moves."></a>
+        <figcaption>Ambience follows the place, not the playlist.</figcaption>
+      </figure>
+    </article>
+
+    <p class="muted small-note">More notes as version 0.6 takes shape. The <a href="/roadmap">road map</a> shows what is being worked on; the <a href="/changelog">changelog</a> shows what shipped.</p>
+  </div>
+</section>
