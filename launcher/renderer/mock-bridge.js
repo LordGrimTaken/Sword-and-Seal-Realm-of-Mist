@@ -32,11 +32,14 @@
   if (scene === "downloading") { st.phase = "updating"; st.update = { state: "not-installed", installedVersion: null, latestVersion: ver, needBytes: 46200000 }; }
   if (scene === "verifying") { st.phase = "updating"; st.update = { state: "not-installed", installedVersion: null, latestVersion: ver, needBytes: 46200000 }; }
   if (scene === "update") st.update = { state: "update-available", installedVersion: "0.2.0", latestVersion: ver, needBytes: 12400000 };
+  if (scene === "whatsnew") st.update = { state: "update-available", installedVersion: "0.2.0", latestVersion: ver, needBytes: 12400000 };
   if (scene === "outdated") st.update = { state: "launcher-outdated", installedVersion: ver, latestVersion: "0.4.0", minLauncherVersion: "1.2.0" };
   if (scene === "offline") { st.status = { online: false, players: 0, latencyMs: null, checked: true }; }
   if (scene === "launching") { st.phase = "playing"; st.game = { running: true }; }
   const snapshot = () => JSON.parse(JSON.stringify(st));
   const push = () => emit("state", snapshot());
+  // whatsnew: shortly after the page opens, the fake update finishes (installed 0.2.0 -> 0.3.0) so the renderer announces it.
+  if (scene === "whatsnew") setTimeout(() => { st.phase = "idle"; st.update = { state: "ready", installedVersion: ver, latestVersion: ver }; push(); }, 900);
   const FILES = ["game/client/dist/assets/index-CfaYlupf.js", "game/electron/linux/resources/app.asar", "game/server/dist/server.mjs", "game/client/dist/index.html"];
 
   async function fakeDownload() {
