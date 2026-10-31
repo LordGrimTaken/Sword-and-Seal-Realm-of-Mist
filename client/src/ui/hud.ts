@@ -36,6 +36,8 @@ export interface HudCallbacks {
   onLowRes(on: boolean): void;
   getLowRes(): boolean;
   onQuestEvent?(e: QuestEvent): void;
+  /** Version chip / help "What's new": open the client-side patch-notes window (wired by main.ts). */
+  onPatchNotes?(): void;
 }
 
 interface Plate { el: HTMLDivElement; t: HTMLDivElement; bar: HTMLElement | null; key: string; deadAt: number }
@@ -131,6 +133,7 @@ export class Hud {
   private xpI!: HTMLElement; private xpL!: HTMLElement; private realmEl!: HTMLElement;
   private chatLog!: HTMLElement; private chatIn!: HTMLInputElement;
   private loot!: HTMLElement; private perf!: HTMLElement;
+  private verChip!: HTMLButtonElement;
   private zone!: HTMLElement; private lvl!: HTMLElement; private death!: HTMLElement; private deathCd!: HTMLElement;
   private hurt!: HTMLElement; private conn!: HTMLElement; private connMsg!: HTMLElement;
   private zoneLabel!: HTMLElement;
@@ -164,6 +167,7 @@ export class Hud {
       <div id="toast" role="status" aria-live="polite"></div>
       <div id="loot" role="status" aria-live="polite"></div>
       <div id="perf"></div>
+      <button id="verchip" type="button" title="What's new · patch notes" aria-label="What's new and patch notes"></button>
       <div id="hurt"></div>
       <div id="zone"><div class="big"></div><div class="ln"></div><div class="small">Cloudmist region</div></div>
       <div id="levelup"><div class="g">Level Up</div><div class="s"></div></div>
@@ -179,6 +183,9 @@ export class Hud {
     this.xpI = $(r, "#xp i"); this.xpL = $(r, "#xplabel"); this.realmEl = $(r, "#realm");
     this.chatLog = $(r, "#chatlog"); this.chatIn = $(r, "#chatin");
     this.loot = $(r, "#loot"); this.perf = $(r, "#perf");
+    // version chip: the label is filled from the bundled release notes by main.ts; clicking opens "What's new"
+    this.verChip = $(r, "#verchip") as HTMLButtonElement;
+    this.verChip.addEventListener("click", () => { this.verChip.blur(); this.cb.onPatchNotes?.(); });
     this.zone = $(r, "#zone"); this.lvl = $(r, "#levelup"); this.death = $(r, "#death"); this.deathCd = $(r, "#death .cd");
     this.hurt = $(r, "#hurt"); this.conn = $(r, "#conn"); this.connMsg = $(r, "#conn p"); this.zoneLabel = $(r, "#zonelabel");
     this.minimap = new Minimap(r);
@@ -215,7 +222,7 @@ export class Hud {
       cb.onQuestEvent?.(e);
     });
     this.dialog = new NpcDialog(r, { talk: (who) => cb.onTalk(who), onOpenSound: () => audio.ui("target"), openBoard: () => { if (!this.board.isOpen) this.board.toggle(true); }, boardSpeech: (t) => this.board.setSpeech(t) });
-    this.help = new HelpOverlay(r, { onLowRes: (on) => cb.onLowRes(on), getLowRes: () => cb.getLowRes() });
+    this.help = new HelpOverlay(r, { onLowRes: (on) => cb.onLowRes(on), getLowRes: () => cb.getLowRes(), onPatchNotes: () => cb.onPatchNotes?.() });
     $(r, "#helpbtn").addEventListener("click", (e) => { this.help.toggle(); (e.currentTarget as HTMLElement).blur(); });
 
     this.chatIn.addEventListener("focus", () => (this.chatFocused = true));
@@ -260,6 +267,12 @@ export class Hud {
   destroy() { window.removeEventListener("keydown", this.onKeyDn); window.removeEventListener("keyup", this.onKeyUp); audio.setBoss(false); this.map.dispose(); this.unsub(); window.clearTimeout(this.toastTimer); window.clearTimeout(this.hurtTimer); window.clearTimeout(this.warnTimer); this.root.innerHTML = ""; this.plates.clear(); this.floats = []; this.slots = []; }
 
   focusChat() { this.chatIn.focus(); }
+
+  /** Fill the version chip from the bundled release notes (main.ts owns the version; clicking the chip opens "What's new"). */
+  setVersion(version: string) {
+    this.verChip.textContent = `v${version}`;
+    this.verChip.title = `What's new in v${version} · patch notes`;
+  }
 
   setMuted(m: boolean) {
     settings.set({ muted: m });

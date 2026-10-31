@@ -11,6 +11,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "prebuild": "node ../scripts/make-releases.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "electron": "electron .",

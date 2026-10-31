@@ -33,6 +33,8 @@ const CONTROLS: Array<[string, string]> = [
 export interface HelpOptions {
   onLowRes(on: boolean): void;
   getLowRes(): boolean;
+  /** "What's new" button: open the client-side patch-notes window (the help window closes first). */
+  onPatchNotes?(): void;
 }
 
 type TabId = "controls" | "sound" | "display" | "access";
@@ -100,7 +102,7 @@ export class HelpOverlay {
             <div class="dbt"><button class="btn sm" type="button" id="s-exp">Export</button> <button class="btn sm" type="button" id="s-imp">Import</button> <button class="btn sm" type="button" id="s-reset">Reset all</button> <span class="msg" id="s-msg" role="status"></span></div>
           </div>
         </div>
-        <div class="dbt"><button class="btn sm" type="button" id="hc">Close</button></div>
+        <div class="dbt"><button class="btn sm ghost" type="button" id="wnbtn">What's new</button><button class="btn sm" type="button" id="hc">Close</button></div>
         <div class="rodb"></div>
       </div>`;
     root.appendChild(this.el);
@@ -191,6 +193,7 @@ export class HelpOverlay {
     // keys typed in the window's fields must not reach the game (Esc and F1 still close it)
     for (const i of this.el.querySelectorAll<HTMLElement>("input, select, textarea, button")) i.addEventListener("keydown", (e) => { if (e.key !== "Escape" && e.key !== "F1") e.stopPropagation(); });
     q("#hc").addEventListener("click", () => this.toggle(false));
+    q("#wnbtn").addEventListener("click", () => { this.toggle(false); this.opt.onPatchNotes?.(); });
     this.el.addEventListener("pointerdown", (e) => { if (e.target === this.el) this.toggle(false); });
     this.setTab("controls");
     this.refresh();

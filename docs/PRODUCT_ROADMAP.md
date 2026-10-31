@@ -45,26 +45,33 @@ Points that survived checking against real products and a few written guides —
 
 - [x] **`/roadmap` page** — shipped / next, in the site's own ink-wash style. It is generated from
       `src/pages/roadmap.html`, appears in the nav and the sitemap, and passes the site e2e test at 1280 and 400 px.
-- [ ] **`/changelog` page** — one section per version from `CHANGELOG.md`, newest first, player-facing bullets only
-      (reuse the existing news-seed parser in `build.mjs`), anchored per version (`#v0-5-0`) so the launcher and the
-      game can deep-link.
+- [x] **`/changelog` page** — one section per version from `CHANGELOG.md`, newest first, player-facing bullets only,
+      anchored per version (`#v0-5-0`) so the launcher and the game can deep-link. Shipped with a shared parser
+      (`scripts/release-notes.mjs`) that also feeds the news seed and the game's bundled notes.
   - Acceptance: every version in `CHANGELOG.md` appears once, in descending order; the news seed and the changelog
-    page are produced from the same parse; e2e passes at 1280 and 400 px.
+    page are produced from the same parse; e2e passes at 1280 and 400 px. **Met:** 5 versions, 15 groups, 12 pages,
+    e2e green, link check 0 problems.
 
 ### P1 — the update is announced where the player is
 
-- [ ] **Launcher "what's new"** — after an update completes, show the release notes for the version just installed
+- [x] **Launcher "what's new"** — after an update completes, show the release notes for the version just installed
       (a card in the existing news area plus a dismissible highlight), then never again for that version
-      (`localStorage` or the install state file).
+      (`localStorage["launcher.whatsNew.dismissedVersion"]`). Shows after a first install too, and can be reopened from
+      the "WHAT'S NEW" button in the news header.
   - Acceptance: the notes for the installed version render after patching; dismissing them survives a restart; a
-    second launch shows the normal news list.
-- [ ] **Launcher changelog tab** — read the same feed, list older versions, link out to `/changelog`.
-- [ ] **In-game "what's new" window** — on the first login after the version changes, a paper-scroll modal with the
-      notes for that version and a "known issues" line; dismissed per version.
+    second launch shows the normal news list. **Met:** 12/12 headless checks, launcher tests green, screenshot
+    `docs/shots/launcher_whats_new.png`.
+- [x] **Launcher changelog entry point** — the "WHAT'S NEW" header button plus a "READ THE FULL CHANGELOG →" link to
+      `{website}/changelog#v<0-5-0 style>` (deep link; the full older-version list lives on the site).
+- [x] **In-game "what's new" window** — on the first login after the version changes, a paper-scroll modal with the
+      notes for that version and a "known issues" line; dismissed per version (`localStorage["jz.seenVersion"]`).
+      Debug/scripted sessions skip the automatic popup so test suites are never blocked.
   - Acceptance: shown once per version (persisted client-side), never blocks input, respects reduced motion, closes
-    with Escape, and can be re-opened from the version chip.
-- [ ] **In-game patch-notes panel** — the same content behind a key (or from the Journal), so it is never more than
-      one action away.
+    with Escape, and can be re-opened from the version chip. **Met:** 22/22 functional checks + 6/6 debug-path checks,
+    screenshot `docs/shots/ui_whats_new.png`.
+- [x] **In-game patch-notes panel** — the same content behind the version chip (click) and the F1 help screen, with a
+      "Read the full notes" history of every shipped version, rendered from the bundled `client/src/data/releases.json`
+      (no network call).
   - Acceptance: opens from the help screen and the version chip; renders the shipped notes; no network call needed.
 
 ### P2 — status and the people behind the game

@@ -16,6 +16,8 @@ import { CombatFeedback } from "./ui/feedback";
 import { SessionStatsPanel } from "./ui/stats";
 import { PartyPanel } from "./ui/party";
 import { TradePanel } from "./ui/trade";
+import releases from "./data/releases.json";
+import { WhatsNewPanel, type Release } from "./ui/whatsnew";
 import { detectLauncher, isKnownCharacter, rememberCharacter, type LauncherCtx } from "./net/launcher";
 import { installAudioGestures, audio } from "./audio/instance";
 import "./ui/settings";
@@ -40,6 +42,13 @@ const initCls: ClassId = qCls && CLASSES.includes(qCls) ? qCls : ((store("jz.cls
 const initName = params.get("name") || store("jz.name") || "";
 const autoLogin = params.get("auto") === "1";
 const qPw = params.get("pw") || (autoLogin ? "testpass1" : "");
+
+// ---- bundled release notes (generated from CHANGELOG.md by scripts/make-releases.mjs; imported, never fetched) ----
+const PATCH_NOTES = releases as Release[];
+/** Version of this build: the newest entry in the bundled release notes. */
+const CURRENT_VERSION = PATCH_NOTES[0]?.version ?? "0.0.0";
+/** True in scripted UI/e2e sessions (?debug=1 or localStorage jz_debug): the automatic update notice is skipped there. */
+const debugSurface = params.get("debug") === "1" || store("jz_debug") === "1";
 
 // ---- debug surface for automated tests (read-only getters); only installed with ?debug=1 or localStorage jz_debug=1
 let game: Game | null = null;
@@ -78,11 +87,17 @@ const jz = {
   get pet() {
     return game?.petDebug() ?? { enabled: false, visible: false, x: 0, y: 0, z: 0, bob: 0, glow: 0 };
   },
+  /** What's new / patch notes: open the window (the automatic notice is skipped in debug sessions, so UI checks drive it). */
+  openWhatsNew(): void { game?.whatsNew?.open(); },
+  /** Client-only "What's new" / patch-notes window state for UI tests. */
+  get whatsNew() {
+    return game?.whatsNew?.debug() ?? { open: false, view: "current", version: CURRENT_VERSION, releases: PATCH_NOTES.length };
+  },
 };
 let lastLoginError = "";
 /** Set in launcher mode (Electron bridge, play.mjs session or ?tok= test path). The token itself only ever lives inside this object's closure until used. */
 let launcher: LauncherCtx | null = null;
-if (params.get("debug") === "1" || store("jz_debug") === "1") Object.defineProperty(window, "__jz", { value: jz, enumerable: true });
+if (debugSurface) Object.defineProperty(window, "__jz", { value: jz, enumerable: true });
 
 const login = new LoginScreen((v) => void enter(v), { name: initName, cls: initCls, server: defaultServer, pw: qPw });
 
@@ -251,6 +266,31 @@ function attachTrade(g: Game): void {
   tradeCleanup = () => { panel.dispose(); tradeCleanup = null; };
 }
 
+/** Removes the current session's "What's new" window; the element lives inside the HUD root the Game clears on dispose. */
+let whatsNewCleanup: (() => void) | null = null;
+/** localStorage key holding the bundled version whose "What's new" window the player has already seen. */
+const SEEN_VERSION_KEY = "jz.seenVersion";
+
+/**
+ * Client-only "What's new" / patch-notes window (data bundled from CHANGELOG.md, no network).
+ * It opens by itself on the first login after the bundled version changes — the last-seen version is persisted in
+ * localStorage — and can be reopened any time from the HUD version chip or the F1 help screen. In scripted debug
+ * sessions the automatic popup is skipped so UI/e2e runs are never blocked; those can drive it through
+ * window.__jz.openWhatsNew() and the version chip still works.
+ */
+function attachWhatsNew(g: Game): void {
+  whatsNewCleanup?.();
+  const panel = new WhatsNewPanel(g.hudRoot, PATCH_NOTES);
+  g.whatsNew = panel;
+  g.setVersionLabel(CURRENT_VERSION);
+  const seen = store(SEEN_VERSION_KEY);
+  if (!debugSurface && PATCH_NOTES.length && seen !== CURRENT_VERSION) {
+    store(SEEN_VERSION_KEY, CURRENT_VERSION); // mark seen before opening: quitting mid-read must not repeat it
+    panel.open();
+  }
+  whatsNewCleanup = () => { panel.destroy(); whatsNewCleanup = null; };
+}
+
 let entering = false;
 async function enter(v: LoginValues, auto = false): Promise<void> {
   if (entering) return;
@@ -277,6 +317,7 @@ async function enter(v: LoginValues, auto = false): Promise<void> {
     attachPet(g);
     attachParty(g);
     attachTrade(g);
+    attachWhatsNew(g);
     wire(g, net, v);
   } catch (e) {
     lastLoginError = e instanceof Error ? e.message : String(e);
@@ -329,7 +370,7 @@ function wire(g: Game, net: NetClient, v: LoginValues) {
   };
   g.onExit = () => { cancelled = true; g.dispose(); game = null; liveNet = null; net.close(); login.show(); login.error("Returned to the login screen."); };
   const exit = g.onExit;
-  g.onExit = () => { combatLogCleanup?.(); statsCleanup?.(); bestiaryCleanup?.(); petCleanup?.(); mountCleanup?.(); partyCleanup?.(); tradeCleanup?.(); exit(); };
+  g.onExit = () => { combatLogCleanup?.(); statsCleanup?.(); bestiaryCleanup?.(); petCleanup?.(); mountCleanup?.(); partyCleanup?.(); tradeCleanup?.(); whatsNewCleanup?.(); exit(); };
 }
 
 /** Make sure the brush and body faces are loaded before the login screen, banners and in-world signage canvases need them. */

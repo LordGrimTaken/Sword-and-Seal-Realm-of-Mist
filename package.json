@@ -11,6 +11,7 @@
     "play": "node scripts/play.mjs",
     "build:server": "node scripts/build-server.mjs",
     "package": "node scripts/package.mjs",
+    "release:notes": "node scripts/make-releases.mjs",
     "electron:dist": "npm --prefix client run dist",
     "launcher:dev": "node launcher/scripts/dev.mjs",
     "launcher:dist": "npm --prefix launcher run dist",

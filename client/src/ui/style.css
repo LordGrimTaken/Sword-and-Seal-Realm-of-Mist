@@ -952,3 +952,46 @@ html[data-motion="reduced"] #party.show { animation: none; }
 html[data-motion="reduced"] #trade.show, html[data-motion="reduced"] #tradeinv.show { animation: none; }
 @media (max-height: 640px) { #trade, #tradeinv { top: 170px; } }
 
+/* ---------- version chip + "What's new" / patch-notes window ----------
+   The chip shows the bundled version (its label is set by main.ts from the generated release notes) and opens the
+   paper-scroll notes window. The window is a full-viewport modal, but while closed it is display:none with
+   pointer-events:none and installs no key listener, so it never blocks the game. The body scrolls when the notes are
+   longer than the card, and every transition is removed under the reduced-motion setting / OS preference. */
+#verchip {
+  position: absolute; right: 12px; bottom: 27px; z-index: 6; pointer-events: auto; cursor: pointer;
+  font-family: var(--font-body); font-size: 10px; line-height: 14px; font-weight: 700; letter-spacing: .7px;
+  color: var(--paper); background: rgba(26,26,31,.62); border: 1px solid rgba(201,162,39,.55); border-radius: 2px;
+  padding: 1px 7px; white-space: nowrap;
+}
+#verchip:hover, #verchip:focus-visible { background: var(--gold); color: var(--ink); border-color: var(--ink); }
+#whatsnew {
+  position: fixed; inset: 0; display: none; place-items: center; z-index: 22; pointer-events: none;
+  background: rgba(26,26,31,.55);
+}
+#whatsnew.show { display: grid; pointer-events: auto; }
+#whatsnew .wnpanel {
+  position: relative; width: min(760px, 92vw); max-height: min(80vh, 640px);
+  display: flex; flex-direction: column; padding: 12px 20px 13px;
+}
+#whatsnew.show .wnpanel { animation: wnunroll .26s cubic-bezier(.2, .8, .2, 1); }
+@keyframes wnunroll { from { opacity: 0; transform: translateY(-14px) scaleY(.96); } }
+#whatsnew .wnh { flex: none; display: flex; align-items: baseline; gap: 10px; border-bottom: 1px solid var(--paper-dark); padding-bottom: 5px; }
+#whatsnew .wnh .brush { font-size: 32px; line-height: 1; color: var(--vermilion); }
+#whatsnew .wnh small { margin-left: auto; font-size: 10.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-soft); white-space: nowrap; }
+#whatsnew .wnbody { min-height: 0; overflow-y: auto; margin: 6px 0 8px; padding-right: 6px; scrollbar-width: thin; scrollbar-color: var(--paper-dark) transparent; outline: none; }
+#whatsnew .wnintro { margin: 2px 0 6px; font-size: 12.5px; line-height: 1.45; font-style: italic; color: var(--ink-soft); }
+#whatsnew .wngh { margin: 9px 0 3px; font-size: 10.5px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: var(--vermilion); }
+#whatsnew .wnbody ul { margin: 0 0 2px; padding-left: 17px; }
+#whatsnew .wnbody li { font-size: 12.5px; line-height: 1.45; margin: 2px 0; }
+#whatsnew .wnknown { margin: 10px 0 2px; font-size: 11px; font-style: italic; color: var(--ink-soft); border-top: 1px dashed var(--paper-dark); padding-top: 5px; }
+#whatsnew details.wnrel { border-bottom: 1px dotted var(--paper-dark); padding: 3px 0; }
+#whatsnew details.wnrel > summary { cursor: pointer; padding: 2px 0; font-size: 13px; line-height: 1.35; }
+#whatsnew details.wnrel > summary b { color: var(--vermilion); }
+#whatsnew details.wnrel > summary small { margin-left: 7px; font-size: 10.5px; color: var(--ink-soft); font-weight: 400; }
+#whatsnew details.wnrel[open] > summary { border-bottom: 1px solid var(--paper-dark); margin-bottom: 2px; }
+#whatsnew .wnfoot { flex: none; display: flex; align-items: center; gap: 9px; border-top: 1px solid var(--paper-dark); padding-top: 8px; flex-wrap: wrap; }
+#whatsnew .wnhint { margin-left: auto; font-size: 10px; letter-spacing: .3px; color: var(--ink-soft); }
+html[data-motion="reduced"] #whatsnew.show .wnpanel { animation: none; }
+@media (prefers-reduced-motion: reduce) { #whatsnew.show .wnpanel { animation: none; } }
+@media (max-height: 640px) { #whatsnew .wnpanel { max-height: 92vh; } #verchip { bottom: 24px; } }
+

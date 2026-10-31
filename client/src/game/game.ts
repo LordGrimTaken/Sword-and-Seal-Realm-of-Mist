@@ -22,6 +22,7 @@ import type { CombatFeedback } from "../ui/feedback";
 import type { SessionStatsPanel } from "../ui/stats";
 import type { PartyPanel } from "../ui/party";
 import type { TradePanel } from "../ui/trade";
+import type { WhatsNewPanel } from "../ui/whatsnew";
 import { audio } from "../audio/instance";
 import { PROMPT_RANGE } from "../ui/dialog";
 import { plain } from "../ui/glyphs";
@@ -187,6 +188,8 @@ export class Game {
   party: PartyPanel | null = null;
   /** 0.5.0 client-only trade window (created and attached by main.ts): two-sided offers from the server `trade` message. */
   trade: TradePanel | null = null;
+  /** Client-only "What's new" / patch-notes window (created by main.ts; auto-shown once per bundled version, reopenable from the version chip and F1). */
+  whatsNew: WhatsNewPanel | null = null;
   /** 0.5.0 treasure caches: procedural chests placed from the dedicated `chests` message + the F interact prompt. */
   private chests!: ChestField;
   /** Display names seen for each mob type in snapshots, so the Bestiary can label entries it has not named yet. */
@@ -211,6 +214,8 @@ export class Game {
   }
   /** Short HUD toast, used for client-only actions such as the companion toggle. */
   toast(msg: string): void { this.hud.toast(msg); }
+  /** Fill the HUD version chip (the label comes from the bundled release notes). */
+  setVersionLabel(version: string): void { this.hud.setVersion(version); }
   /** 0.5.0 party: send one action; the server validates it and answers with the resulting `party` state. */
   sendParty(a: "accept" | "decline" | "leave"): void { this.net.send({ t: "party", a }); }
   /** 0.5.0 trade: send one action; the server validates it and pushes the resulting two-sided state to both traders. */
@@ -277,6 +282,7 @@ export class Game {
       onLowRes: (on) => this.setLowRes(on),
       getLowRes: () => this.lowRes,
       onQuestEvent: (e) => this.onQuestEvent(e),
+      onPatchNotes: () => this.whatsNew?.open(),
     });
     this.hud.setZone(this.zone);
     this.hud.setSkills(this.skills, this.cls);
