@@ -1,5 +1,23 @@
 [
   {
+    "id": "update-0-6",
+    "tag": "Update 0.6",
+    "banner": "valley",
+    "title": "Update 0.6: The Hollow Trial and the Twin Wardens",
+    "date": "2026-10-31",
+    "summary": "A five-wave trial with modifiers, a linked pair of bosses, and a drowned court in the north-west.",
+    "body": "Update 0.6 is ready. The launcher fetches it for you.\n\nNew fights\n- The Hollow Trial waits at a gate in the eastern meadow. Five waves, one or two modifiers per run - Swift, Armoured, Frenzied or Sparse - and a payout of coin, jade, experience and a chance at gear when the last wave falls. One run at a time, so bring a friend.\n- The Twin Wardens stand on the eastern rise. While both live they share a ward that cuts your damage by a third; when one falls the other enrages, and finishing the second within twenty-five seconds pays a together bonus.\n\nA second place\n- The Sunken Hall lies in the north-west, behind one broken gate: a drowned court with its own cold light, its own camps of stone hounds and ink wisps, and its own name in the corner of your screen once you step inside.\n\nWhat's new\n- The game now shows what changed the first time you log in after an update. Miss it? Click the version chip at the bottom-right, or open help with F1.\n\nLauncher\n- A What's new card appears after an update, with a link to the full changelog.\n- If something breaks, Settings has Report a problem: it writes a diagnostic file beside the launcher log and opens a support email with the details.\n\nWebsite\n- A road map, a changelog, a live server status page, a press kit and a devlog are all up. The first-hour guide on the support page is the fastest way in."
+  },
+  {
+    "id": "update-0-5",
+    "tag": "Update 0.5",
+    "banner": "blades",
+    "title": "Update 0.5: The Hollow expansion",
+    "date": "2026-10-30",
+    "summary": "A fourth class, the Hollow Bride, parties with shared XP, trading, a spirit-sword mount and three world events.",
+    "body": "Update 0.5 was a large one. If you have not played since 0.4, these are the changes that matter.\n\nA fourth path\n- The Blade Dancer joins the Sword Cultivator, Talisman Master and Physician: a fast melee duelist with its own sword forms.\n- Every class now sits in a cultivation realm - Qi Condensation through Spirit Severing - and each breakthrough grants permanent health.\n\nNew enemies and a fourth boss\n- Ink Wisps and Thorn Sprites roam the valley, and the Hollow Bride waits on the eastern steps: she is untouchable while her veil is up, and only takes real damage when it falls.\n\nFight together\n- Parties of up to five, with shared experience for every member near a kill.\n- Trade with another player safely: both sides confirm, and nothing moves until they do.\n\nTravel and company\n- Ride a spirit sword for faster travel (R), and a lantern spirit follows you if you want the company (P).\n- The weather now turns: clear, rolling mist and soft rain.\n\nThe valley changes\n- Three world events cycle through: Mist Surge, Lantern Tide and Market Day.\n- Six treasure caches appear around the valley; stand by one and press F to open it.\n- Merit seals grew to thirty, with titles for the harder ones."
+  },
+  {
     "id": "update-0-4",
     "tag": "Update 0.4",
     "banner": "blades",

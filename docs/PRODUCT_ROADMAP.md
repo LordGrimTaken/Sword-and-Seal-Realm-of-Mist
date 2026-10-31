@@ -86,14 +86,29 @@ Points that survived checking against real products and a few written guides —
       seal/wordmark notes, contact and usage rules.
 - [x] **FAQ and first hour** — the FAQ already covered accounts, the launcher, networks, controls and bug reports; this
       pass adds **"Your first hour"** to `/support#first-hour`: a six-step route from sign-in to the Stone Guardian.
-- [ ] **Bug report** — a launcher button that writes a report with the launcher log and the last client errors
-      (in progress: the launcher builds a diagnostic bundle into `<userData>/report-<timestamp>.txt`).
+- [x] **Bug report** — the launcher's Settings now has **Report a problem**: it writes a plain-text diagnostic bundle to
+      `<userData>/report-<timestamp>.txt` (launcher/runtime versions, OS and arch, install folder, game and update state,
+      last launcher and renderer errors, the last 200 lines of `launcher.log`), reveals it, and offers a prefilled
+      support email. The renderer talks to it only through the preload bridge.
 - [x] **Download page details** — already present before this pass: per-platform checksums with copy instructions,
       system requirements, the unsigned-build (SmartScreen/Gatekeeper) notes and a portable build link.
 
 ### P3 — content the roadmap promises
-A second zone, a dungeon with repeatable modifiers, and more boss mechanics. These are game work, not surface work;
-they are listed in `/roadmap` so the site does not over-promise what the version numbers imply.
+Shipped in **0.6.0**. These were game work, not surface work, and each was verified with content checks plus a live
+probe before it was published.
+
+- [x] **A second zone beyond the valley** — *The Sunken Hall*, a drowned court in the north-west reached through one
+      broken gate: its own cold ambience, two higher-level camps (stone hounds, ink wisps), an atlas place of interest
+      with 80 XP, and a HUD zone label that switches to "The Sunken Hall" while you stand inside it. The atlas
+      achievement is now data-driven, so adding the seventh place did not leave it asking for six.
+- [x] **A dungeon with repeatable modifiers** — *The Hollow Trial* at a gate in the eastern meadow: five waves of
+      existing mobs, one or two seeded modifiers per run (Swift, Armoured, Frenzied, Sparse), a five-minute timer, one
+      run at a time, a cooldown, bounded rewards paid through the normal economy paths, and every summoned mob removed
+      on clear, failure, timeout or disconnect.
+- [x] **More boss mechanics, two at a time** — *The Twin Wardens*, a linked pair on the eastern rise: a bound ward cuts
+      incoming damage by 35% while both stand, the survivor enrages for +55% damage when its partner falls, and killing
+      the second within 25 s pays a together bonus. Both count as bosses for the bar, the bestiary, the daily board and
+      the new Twinbreaker seal.
 
 ## 4. One source of truth for release notes
 

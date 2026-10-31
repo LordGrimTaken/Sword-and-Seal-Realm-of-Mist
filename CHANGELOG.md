@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6.0 - The Trial and the Twin Wardens (2026-10-31)
+
+Two new ways to fight, a second named region, and an update notice that reaches you on every surface.
+
+**New fights**
+- **The Hollow Trial**: a five-wave challenge at a gate in the eastern meadow. Each run rolls one or two modifiers — Swift, Armoured, Frenzied or Sparse — and the fifth wave pays coin, jade, experience and a chance at gear. One run at a time, with a cooldown, and every summoned mob is removed when a run ends, fails or is abandoned.
+- **The Twin Wardens**: a linked pair of bosses on the eastern rise. While both stand they share a bound ward that cuts incoming damage by a third; when one falls the survivor enrages, and bringing the second down within twenty-five seconds pays a together bonus of coin, jade and a charm. Both count as bosses for the bar, the bestiary, the daily board and the new Twinbreaker seal.
+
+**A second region**
+- **The Sunken Hall**: a drowned court in the north-west, entered through one broken gate. It has its own cold ambience, its own camps of higher-level stone hounds and ink wisps, an atlas entry, and the HUD names the place while you stand inside it.
+
+**Update notices**
+- The game shows a **"What's new"** window once per version with that version's notes, a known-issues line and the full history; reopen it from the version chip or the help screen.
+- The launcher shows a **"What's new"** card after an update or a first install, and links to the full changelog.
+- The launcher can **write a problem report**: a diagnostic text file beside the launcher log with the last two hundred log lines, versions, platform and errors, plus a prefilled support email.
+
+**Website**
+- New pages: a **road map**, a **changelog**, a **server status** page, a **press kit** and a **devlog**, plus a first-hour guide on the support page.
+- Release notes now come from a single parser, so the site news, the changelog page and the in-game notes cannot disagree.
+
 ## 0.5.0 - The Hollow expansion (2026-10-30)
 
 Content and systems added on top of 0.4.0; protocol stays v3 (every message is additive).

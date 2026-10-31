@@ -1091,7 +1091,7 @@ export const ACHIEVEMENTS: AchDef[] = [
   { id: "side_3", name: "Helping Hand", desc: "Finish 3 side quests.", cat: "Story", pts: 10, counter: "quest", need: 3 },
   { id: "side_8", name: "Friend of the Plaza", desc: "Finish 8 side quests.", cat: "Story", pts: 25, counter: "quest", need: 8, title: "Friend of the Plaza" },
   { id: "wanderer", name: "Wanderer", desc: "Discover 3 places of interest.", cat: "Exploration", pts: 10, counter: "poi", need: 3 },
-  { id: "cartographer", name: "Cartographer", desc: "Discover all 6 places of interest.", cat: "Exploration", pts: 20, counter: "poi", need: 6, title: "Cartographer" },
+  { id: "cartographer", name: "Cartographer", desc: "Discover every place of interest.", cat: "Exploration", pts: 20, counter: "poi", need: POIS.length, title: "Cartographer" },
   { id: "apprentice", name: "Apprentice Smith", desc: "Craft 5 items with Artisan Tao.", cat: "Craft", pts: 10, counter: "craft", need: 5, title: "Apprentice Smith" },
   { id: "well_dressed", name: "Well Dressed", desc: "Fill all six equipment slots.", cat: "Craft", pts: 15, counter: "equipped", need: 6 },
   { id: "rare_find", name: "A Rare Find", desc: "Wear a rare or epic item.", cat: "Craft", pts: 10, counter: "rare", need: 1 },
