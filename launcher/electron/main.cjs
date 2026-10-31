@@ -78,6 +78,15 @@ async function boot() {
     return addDefenderExclusion();
   }));
   ipcMain.handle("openLogFolder", () => { shell.showItemInFolder(path.join(app.getPath("userData"), "launcher.log")); });
+  // "Report a problem": build the plain-text diagnostic report in <userData> and reveal it. The renderer never touches the
+  // filesystem: it only passes the last error it saw. LAUNCHER_HIDDEN=1 is the automated/no-desktop mode, so the reveal is
+  // skipped there (a file-manager window must not pop up over an automated run).
+  ipcMain.handle("createReport", guard((_e, extra) => {
+    const rendererError = extra && typeof extra === "object" ? String(extra.error || "") : "";
+    const r = core.createReport({ rendererError });
+    if (r && r.ok && r.path && process.env.LAUNCHER_HIDDEN !== "1") { try { shell.showItemInFolder(r.path); } catch { /* ignore */ } }
+    return r;
+  }));
   ipcMain.handle("restartAsAdmin", guard(async () => {
     if (process.platform !== "win32") return { ok: false, error: "Only available on Windows." };
     const { spawn } = require("child_process");
@@ -86,7 +95,8 @@ async function boot() {
     setTimeout(() => app.quit(), 800);
     return { ok: true };
   }));
-  ipcMain.handle("openExternal", (_e, u) => { try { const p = new URL(String(u)); if (p.protocol === "https:" || p.protocol === "http:") shell.openExternal(p.href); } catch { /* ignore */ } });
+  // http(s) for the website links, mailto: for the "report a problem" mail draft; nothing else is opened externally.
+  ipcMain.handle("openExternal", (_e, u) => { try { const p = new URL(String(u)); if (p.protocol === "https:" || p.protocol === "http:" || p.protocol === "mailto:") shell.openExternal(p.href); } catch { /* ignore */ } });
   ipcMain.handle("minimize", () => win?.minimize());
   ipcMain.handle("close", () => app.quit());
 

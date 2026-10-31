@@ -221,3 +221,21 @@ a:hover { text-decoration: underline; }
 .changelog-link { padding: 0; border: 0; background: none; color: var(--gold-hi); font: 600 10px var(--font-body); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
 .changelog-link:hover { color: var(--paper); text-decoration: underline; }
 .whatsnew-foot .btn { width: auto; flex: none; }
+
+/* ---------- Report a problem (settings > Support) ---------- */
+.report-note { display: block; margin: 2px 0 0; font-size: 11px; line-height: 1.5; color: var(--text-dim); user-select: text; word-break: break-all; }
+.report-note.bad { color: #ffb4aa; }
+.link-inline { align-self: flex-start; padding: 0; border: 0; background: none; color: var(--gold-hi); font: 600 10px var(--font-body); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
+.link-inline:hover { color: var(--paper); text-decoration: underline; }
+
+/* ---------- Settings sheet: keep the taller Support group inside 1100x680 (compacted spacing, scrolls only if ever needed) ---------- */
+.sheet-wide { padding: 16px 22px 12px; max-height: calc(100% - 16px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(242,234,216,.22) transparent; }
+.sheet-head .panel-sub { margin: 0 0 12px; }
+.settings-grid { gap: 20px; }
+.set-h { margin: 0 0 8px; }
+.set-h:not(:first-child) { margin-top: 10px; padding-top: 8px; }
+.tool { gap: 4px; margin: 0 0 8px; }
+.set-col .hint { font-size: 11px; line-height: 1.4; margin-top: 2px; }
+.sheet-wide .sheet-actions { margin-top: 10px; padding-top: 10px; }
+.report-note { margin-top: 1px; }
+.report-note { font-size: 10px; line-height: 1.35; }

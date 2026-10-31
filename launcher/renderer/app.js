@@ -4,6 +4,10 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const api = window.launcherApi;
+  // The last renderer-side error, included in "Report a problem" bundles. All file work happens in the main process.
+  let lastRendererError = "";
+  window.addEventListener("error", (e) => { lastRendererError = `${e.message || "Script error"}${e.filename ? ` (${e.filename}:${e.lineno}:${e.colno})` : ""}`; });
+  window.addEventListener("unhandledrejection", (e) => { const r = e.reason; lastRendererError = `Unhandled rejection: ${(r && (r.stack || r.message)) || String(r)}`; });
   let info = null, snap = null, mode = "login", busyAuth = false, loggedIn = null;
   let prog = null;            // last progress event of the current/paused task
   let paused = false;         // the download was paused by the player (partial files are kept on disk)
@@ -335,6 +339,32 @@
     else if (r.status === "available") n.textContent = `Version ${r.version} found. Downloading it now; you will be asked to restart.`;
     else n.textContent = "You have the latest launcher.";
   }
+  // ---------- report a problem ----------
+  let reportMailto = "";
+  /** Ask the main process (through the preload bridge) for a diagnostic report; the renderer never touches the filesystem. */
+  async function reportProblem() {
+    const btn = $("btn-report"), note = $("report-note"), mail = $("link-report-mail");
+    if (btn.disabled) return;
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = "Writing report…";
+    mail.hidden = true; reportMailto = "";
+    note.hidden = false; note.className = "report-note"; note.textContent = "Writing report…";
+    try {
+      const r = await api.createReport({ error: lastRendererError });
+      if (r && r.ok && r.path) {
+        note.textContent = `Report saved: ${r.path}`;
+        reportMailto = typeof r.mailto === "string" ? r.mailto : "";
+        show(mail, !!reportMailto);
+      } else {
+        note.className = "report-note bad";
+        note.textContent = `Could not write the report: ${(r && r.error) || "unknown error"}`;
+      }
+    } catch (e) {
+      note.className = "report-note bad";
+      note.textContent = `Could not write the report: ${e.message || e}`;
+    }
+    btn.disabled = false; btn.textContent = label;
+  }
   const closeModals = () => {
     if (!$("whatsnew").hidden) { dismissWhatsNew(); return; }
     show($("settings"), false); show($("reader"), false);
@@ -362,6 +392,8 @@
     $("btn-unblock").addEventListener("click", async () => { const n = $("unblock-note"); n.textContent = "Working..."; const r = await api.unblockFiles(); n.textContent = r && r.ok ? (r.note || "Done. Files are unblocked.") : "Could not unblock: " + ((r && r.error) || "unknown error"); });
     $("btn-admin").addEventListener("click", async () => { const r = await api.restartAsAdmin(); if (r && !r.ok) setError($("set-error"), r.error); });
     $("btn-log").addEventListener("click", () => api.openLogFolder());
+    $("btn-report").addEventListener("click", reportProblem);
+    $("link-report-mail").addEventListener("click", (e) => { e.preventDefault(); if (reportMailto) api.openExternal(reportMailto); });
     $("btn-launcher-update").addEventListener("click", checkLauncherUpdate);
     api.on("launcher-update", onLauncherUpdate);
     $("btn-min").addEventListener("click", () => api.minimize());

@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -195,6 +195,13 @@
             <button id="btn-log" class="btn ghost small" type="button">Open log</button>
           </div>
           <p class="hint tool-note">Use the last two if the game keeps failing to install or start.</p>
+          <h3 class="set-h">Support</h3>
+          <div class="tool">
+            <button id="btn-report" class="btn ghost small" type="button">Report a problem</button>
+            <span class="hint">Writes a diagnostic report next to launcher.log.</span>
+            <span id="report-note" class="report-note" hidden></span>
+            <button id="link-report-mail" class="link-inline" type="button" hidden>Email the report to support</button>
+          </div>
         </section>
       </div>
 
@@ -211,3 +218,4 @@
 <script src="app.js"></script>
 </body>
 </html>
+

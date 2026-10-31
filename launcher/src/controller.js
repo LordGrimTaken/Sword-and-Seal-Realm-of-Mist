@@ -157,6 +157,63 @@ export class LauncherCore extends EventEmitter {
     } catch { /* logging must never break the launcher */ }
   }
 
+  /**
+   * Build a plain-text problem report in <userData>/report-<timestamp>.txt and return { ok, path, mailto }.
+   * extra.rendererError: the last error the renderer recorded (optional). A missing/unreadable launcher.log is fine —
+   * the report says so instead of failing. The renderer only ever asks for this through the preload bridge; it never
+   * touches the filesystem itself.
+   */
+  createReport(extra = {}) {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const file = path.join(this.userData, `report-${stamp}.txt`);
+    const st = this.settings.get();
+    const u = this.update || {};
+    const installed = u.installedVersion || null;
+    const logFile = path.join(this.userData, "launcher.log");
+    let log = "";
+    try {
+      const lines = fs.readFileSync(logFile, "utf8").split(/\r?\n/);
+      while (lines.length && !lines[lines.length - 1].trim()) lines.pop(); // ignore the trailing newline
+      log = lines.slice(-200).join("\n");
+    } catch { /* no log yet: the report notes it below */ }
+    const rendererError = typeof extra.rendererError === "string" ? extra.rendererError.trim().slice(0, 4000) : "";
+    const env = process.versions || {};
+    const text = [
+      "Sword and Seal Launcher problem report",
+      "======================================",
+      "",
+      `Generated: ${now.toISOString()} (local ${now.toString()})`,
+      `Launcher: ${this.launcherVersion}`,
+      `Platform: ${this.platform} (${os.type()} ${os.release()} ${os.arch()})`,
+      `Runtime: Electron ${env.electron || "n/a"} | Chromium ${env.chrome || "n/a"} | Node ${env.node || "n/a"}`,
+      `User data folder: ${this.userData}`,
+      `Install folder: ${st.installDir}`,
+      `Game version: ${installed || "not installed"}`,
+      `Update state: ${u.state || "unknown"}${u.latestVersion ? ` (installed ${installed || "none"}, latest ${u.latestVersion})` : ""}`,
+      `Launcher phase: ${this.phase}`,
+      `Last launcher error: ${this.error || "none"}`,
+      `Renderer last error: ${rendererError || "none recorded"}`,
+      `Report file: ${file}`,
+      "",
+      log ? `Recent launcher.log (last 200 lines):` : `Recent launcher.log:`,
+      "--------------------------------------",
+      log || "(launcher.log does not exist yet - nothing has been logged)",
+      "",
+    ].join("\n");
+    try {
+      fs.mkdirSync(this.userData, { recursive: true });
+      fs.writeFileSync(file, text, "utf8");
+    } catch (e) {
+      return { ok: false, error: e.message || String(e) };
+    }
+    this.log(`wrote problem report ${file}`);
+    const subject = `Sword and Seal problem report (launcher v${this.launcherVersion}${installed ? `, game v${installed}` : ""})`;
+    const body = `Hello support,\n\nI hit a problem in the launcher.\n\nReport file: ${file}\nPlease attach that file to this email.\n\nWhat I was doing:\n\n`;
+    return { ok: true, path: file, mailto: `mailto:support@swordandseal.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` };
+  }
+
   // ---- update check ----
   async refresh() {
     if (this.phase === "updating" || this.phase === "playing") return this.update;

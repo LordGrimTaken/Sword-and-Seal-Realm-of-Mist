@@ -84,6 +84,14 @@
     },
     async setSettings(p) { Object.assign(settings, p); return { ...settings }; },
     async pickFolder() { return "/mnt/games/SwordAndSeal"; },
+    // "Report a problem" mock: pretends the main process wrote the report and returns its path + the mailto draft.
+    async createReport(extra) {
+      await wait(500);
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const p = `/home/player/.config/SwordAndSeal/report-${stamp}.txt`;
+      console.log("createReport", JSON.stringify({ error: (extra && extra.error) || "", path: p }));
+      return { ok: true, path: p, mailto: "mailto:support@swordandseal.com?subject=Sword%20and%20Seal%20problem%20report" };
+    },
     openExternal(u) { console.log("openExternal", u); },
     minimize() {}, close() {},
   };

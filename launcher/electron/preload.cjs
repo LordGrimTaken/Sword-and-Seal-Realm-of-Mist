@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("launcherApi", {
   offerDefenderExclusion: () => call("offerDefenderExclusion"),
   unblockFiles: () => call("unblockFiles"),
   openLogFolder: () => call("openLogFolder"),
+  createReport: (extra) => call("createReport", extra),
   restartAsAdmin: () => call("restartAsAdmin"),
   detectInstallDir: () => call("detectInstallDir"),
   checkLauncherUpdate: () => call("checkLauncherUpdate"),
