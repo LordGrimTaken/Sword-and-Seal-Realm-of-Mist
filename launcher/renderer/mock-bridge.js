@@ -51,7 +51,7 @@
   window.launcherApi = {
     mock: true,
     async info() {
-      return { launcherVersion: "1.1.0", platform: "linux", config: { website: "https://swordandseal.com", support: "https://swordandseal.com/support", gameServerUrl: "wss://play.swordandseal.com", apiBaseUrl: "https://play.swordandseal.com", releaseBaseUrl: "https://dl.swordandseal.com/game" }, settings: { ...settings }, session, snapshot: snapshot() };
+      return { launcherVersion: "1.3.0", platform: "linux", config: { website: "https://swordandseal.com", support: "https://swordandseal.com/support", gameServerUrl: "wss://play.swordandseal.com", apiBaseUrl: "https://play.swordandseal.com", releaseBaseUrl: "https://dl.swordandseal.com/game" }, settings: { ...settings }, session, snapshot: snapshot() };
     },
     on(ev, f) { (handlers[ev] ||= []).push(f); return () => { handlers[ev] = handlers[ev].filter((x) => x !== f); }; },
     async auth(kind, name, pw) {

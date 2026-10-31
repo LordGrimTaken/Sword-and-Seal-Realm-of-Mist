@@ -97,6 +97,9 @@ async function boot() {
 
 function createWindow() {
   Menu.setApplicationMenu(null);
+  // LAUNCHER_HIDDEN=1: build the window but never show it, so automated checks can drive the real renderer over
+  // the DevTools protocol without putting a window on the user's desktop. Rendering still happens; only show() is skipped.
+  const hidden = process.env.LAUNCHER_HIDDEN === "1";
   win = new BrowserWindow({
     width: 1100, height: 680, useContentSize: true, resizable: false, maximizable: false, frame: false, show: false,
     backgroundColor: "#12161c", title: "Sword and Seal Launcher",
@@ -104,7 +107,7 @@ function createWindow() {
   });
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (e) => e.preventDefault());
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => { if (!hidden) win.show(); });
   win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
   if (process.env.LAUNCHER_DEVTOOLS === "1") win.webContents.openDevTools({ mode: "detach" });
 }

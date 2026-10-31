@@ -155,8 +155,7 @@
   function render() {
     if (!snap) return;
     const u = snap.update || {}, m = model();
-    const updating = snap.phase === "updating", playing = snap.phase === "playing" || !!snap.game;
-    if (!updating && !paused) prog = null;
+    const updating = snap.phase === "updating", playing = snap.phase === "playing" || !!snap.game;    if (!updating && !paused) prog = null;
     // left status block
     $("ver-installed").textContent = u.installedVersion ? `v${u.installedVersion}` : "Not installed";
     const outdated = u.latestVersion && u.installedVersion !== u.latestVersion;
@@ -165,8 +164,9 @@
     $("user-game").textContent = u.installedVersion ? `v${u.installedVersion}${outdated ? " (update available)" : ""}` : "Not installed";
     // button
     const btn = $("btn-play");
-    btn.className = "play " + m.cls; btn.disabled = !m.enabled; $("play-label").textContent = m.label;
+    btn.className = "play " + m.cls; btn.disabled = !m.enabled;
     if (m.label.length > 8 && !btn.classList.contains("long")) btn.classList.add("long");
+    $("play-label").textContent = m.label;
     // center
     $("bc-state").textContent = m.text;
     const bar = $("track"), fill = $("track-fill");

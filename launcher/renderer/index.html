@@ -41,12 +41,11 @@
   </header>
 
   <!-- LEFT: account -->
-  <section class="card account" aria-label="Account">
-    <i class="corner tl"></i><i class="corner br"></i>
+  <section class="panel account" aria-label="Account">
     <div id="login-view">
       <div class="eyebrow" id="auth-eyebrow">Sign in</div>
-      <h2 class="card-title" id="auth-title">Welcome, traveler</h2>
-      <p class="card-sub" id="auth-sub">Sign in to enter the Realm of Mist.</p>
+      <h2 class="panel-title" id="auth-title">Welcome, traveler</h2>
+      <p class="panel-sub" id="auth-sub">Enter the Realm of Mist.</p>
       <form id="auth-form" autocomplete="off" novalidate>
         <label class="field"><span>Account name</span><input id="in-name" type="text" maxlength="24" spellcheck="false" autocomplete="username" placeholder="Your name in the realm"></label>
         <label class="field"><span>Password</span>
@@ -60,7 +59,6 @@
     </div>
 
     <div id="user-view" hidden>
-      <div class="eyebrow">Signed in</div>
       <div class="user-row">
         <div class="avatar" id="user-initial" aria-hidden="true"></div>
         <div class="user-meta">
@@ -81,18 +79,20 @@
   <section class="news" aria-label="News">
     <div class="news-head">
       <h2 class="news-title">News</h2>
-      <span class="news-rule"></span>
       <span id="news-badge" class="badge" hidden>Offline copy</span>
     </div>
     <div id="news-list" class="news-list"></div>
   </section>
 
-  <!-- BOTTOM: status, progress, primary button -->
+  <!-- BOTTOM: server status, progress, primary button -->
   <footer class="bar">
     <div class="bar-status" aria-label="Server status">
       <div id="status-line" class="st-line checking"><i class="dot"></i><b id="status-text">Checking server</b><span id="status-detail"></span></div>
-      <div class="st-line ver"><span>Game</span><b id="ver-installed">Not installed</b><i id="ver-arrow" hidden>&rarr;</i><b id="ver-latest" hidden></b><em id="ver-chip" class="chip" hidden>Update</em></div>
-      <div class="st-line dim"><span id="foot-ver">Launcher v1.1.0</span></div>
+      <div class="bar-meta">
+        <span id="foot-ver" class="foot">Launcher v1.3.0</span>
+        <i class="meta-sep"></i>
+        <span class="ver-line">Game <b id="ver-installed">Not installed</b><i id="ver-arrow" hidden>&rarr;</i><b id="ver-latest" hidden></b><em id="ver-chip" class="chip" hidden>Update</em></span>
+      </div>
     </div>
 
     <div class="bar-center">
@@ -118,10 +118,9 @@
   <!-- news reader -->
   <div id="reader" class="modal" hidden>
     <div class="sheet reader" role="dialog" aria-label="News article">
-      <i class="corner tl"></i><i class="corner br"></i>
       <div id="reader-banner" class="reader-banner"></div>
       <div class="reader-meta"><span id="reader-tag" class="tag"></span><span id="reader-date" class="date"></span></div>
-      <h2 id="reader-title" class="card-title"></h2>
+      <h2 id="reader-title" class="sheet-title"></h2>
       <div id="reader-body" class="reader-body"></div>
       <div class="sheet-actions"><button id="btn-reader-close" class="btn ghost small" type="button">Close</button></div>
     </div>
@@ -129,39 +128,55 @@
 
   <!-- settings modal -->
   <div id="settings" class="modal" hidden>
-    <div class="sheet" role="dialog" aria-label="Settings">
-      <i class="corner tl"></i><i class="corner br"></i>
-      <div class="eyebrow">Launcher</div>
-      <h2 class="card-title">Settings</h2>
-      <label class="field"><span>Install folder</span>
-        <div class="row"><input id="set-dir" type="text" readonly><button id="btn-browse" class="btn ghost small" type="button">Browse</button><button id="btn-detect" class="btn ghost small" type="button">Detect</button></div>
-        <span id="detect-note" class="hint" hidden></span>
-      </label>
-      <label class="field"><span>Server address override</span>
-        <input id="set-server" type="text" spellcheck="false" placeholder="Leave empty for the default server">
-      </label>
-      <label class="check"><input id="set-close" type="checkbox"><i class="box"></i><span>Close the launcher when the game starts</span></label>
-      <div class="verify-row">
-        <button id="btn-verify" class="btn ghost small" type="button">Verify files</button>
-        <span class="hint">Re-checks every game file and repairs damaged ones.</span>
+    <div class="sheet sheet-wide" role="dialog" aria-label="Settings">
+      <header class="sheet-head">
+        <h2 class="sheet-title">Settings</h2>
+        <p class="panel-sub">Install location, connection and repair tools.</p>
+      </header>
+
+      <div class="settings-grid">
+        <section class="set-col">
+          <h3 class="set-h">Installation</h3>
+          <label class="field"><span>Install folder</span>
+            <div class="row"><input id="set-dir" type="text" readonly><button id="btn-browse" class="btn ghost small" type="button">Browse</button><button id="btn-detect" class="btn ghost small" type="button">Detect</button></div>
+            <span id="detect-note" class="hint" hidden></span>
+          </label>
+          <h3 class="set-h">Connection</h3>
+          <label class="field"><span>Server address override</span>
+            <input id="set-server" type="text" spellcheck="false" placeholder="Leave empty for the default server">
+          </label>
+          <label class="check"><input id="set-close" type="checkbox"><i class="box"></i><span>Close the launcher when the game starts</span></label>
+          <h3 class="set-h">About</h3>
+          <p class="hint">Sword and Seal Launcher v1.3.0. Every start re-checks the installed files and repairs anything damaged before it invites you in.</p>
+        </section>
+
+        <section class="set-col">
+          <h3 class="set-h">Maintenance</h3>
+          <div class="tool">
+            <button id="btn-verify" class="btn ghost small" type="button">Verify files</button>
+            <span class="hint">Re-checks every game file and repairs damaged ones.</span>
+          </div>
+          <div class="tool">
+            <button id="btn-launcher-update" class="btn ghost small" type="button">Launcher update</button>
+            <span id="launcher-update-note" class="hint">The launcher checks for updates when it starts.</span>
+          </div>
+          <h3 class="set-h">Windows tools</h3>
+          <div class="tool">
+            <button id="btn-unblock" class="btn ghost small" type="button">Unblock files</button>
+            <span class="hint" id="unblock-note">Removes the "downloaded from the internet" block from game files.</span>
+          </div>
+          <div class="tool">
+            <button id="btn-defender" class="btn ghost small" type="button">Defender exclusion</button>
+            <span class="hint" id="defender-note">Tells Windows Defender to skip the game folder.</span>
+          </div>
+          <div class="tool tool-pair">
+            <button id="btn-admin" class="btn ghost small" type="button">Run as admin</button>
+            <button id="btn-log" class="btn ghost small" type="button">Open log</button>
+          </div>
+          <p class="hint tool-note">Use the last two if the game keeps failing to install or start.</p>
+        </section>
       </div>
-      <div class="verify-row">
-        <button id="btn-launcher-update" class="btn ghost small" type="button">Check for launcher updates</button>
-        <span id="launcher-update-note" class="hint">The launcher checks for updates when it starts.</span>
-      </div>
-      <div class="verify-row">
-        <button id="btn-unblock" class="btn ghost small" type="button">Unblock files</button>
-        <span class="hint" id="unblock-note">Windows only: removes the "downloaded from the internet" block from game files if Windows blocks them.</span>
-      </div>
-      <div class="verify-row">
-        <button id="btn-defender" class="btn ghost small" type="button">Add Defender exclusion</button>
-        <span class="hint" id="defender-note">Windows only: tells Windows Defender to skip the game folder so it cannot remove game files.</span>
-      </div>
-      <div class="verify-row">
-        <button id="btn-admin" class="btn ghost small" type="button">Restart as administrator</button>
-        <button id="btn-log" class="btn ghost small" type="button">Open log</button>
-        <span class="hint">Use these if the game keeps failing to install or start.</span>
-      </div>
+
       <div id="set-error" class="error" hidden></div>
       <div class="sheet-actions">
         <button id="btn-set-cancel" class="btn ghost small" type="button">Close</button>
