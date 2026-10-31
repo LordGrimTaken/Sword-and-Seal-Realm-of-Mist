@@ -29,6 +29,7 @@ const CONTROLS: Array<[string, string]> = [
   ["F1 or ?", "This window (Controls, Sound, Display, Access)"],
   ["F11 / F12", "Fullscreen / devtools (desktop app)"],
   ["Veiled foes", "The Hollow Bride is immune while her veil is up — dodge the lashes, then burst while she is revealed"],
+  ["Twin Wardens", "Linked pair on the eastern rise (45/-16 · 51/-16): while both stand they take -35% damage; when one falls the survivor enrages — slay it within 25 s for the together bonus"],
 ];
 
 export interface HelpOptions {

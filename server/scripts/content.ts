@@ -9,13 +9,13 @@ import WebSocket from "ws";
 import { PROTOCOL_VERSION, REALMS, realmForLevel } from "../../shared/protocol.ts";
 import type { ClassId, ServerMsg } from "../../shared/protocol.ts";
 import {
-  ACHIEVEMENTS, ACH_BY_ID, ALL_TITLES, CLASSES, CONSUMABLES, DAILY_COUNT, DAILY_POOL, GEAR, GEAR_BY_NAME, GEAR_SETS, GEAR_SET_OF, INV, LANTERN_TIDE, MARKET_DAY, MATERIALS, MAX_LEVEL, MIST_SURGE, MOBS, MOB_SPAWNS, NPCS, NPC_SVC, POIS, QUEST_ITEMS, RECIPES, SHOP, SIDE_QUESTS, SIDE_QUEST_BY_ID, TUNING, ZONE,
+  ACHIEVEMENTS, ACH_BY_ID, ALL_TITLES, CLASSES, CONSUMABLES, DAILY_COUNT, DAILY_POOL, GEAR, GEAR_BY_NAME, GEAR_SETS, GEAR_SET_OF, INV, JADE, LANTERN_TIDE, MARKET_DAY, MATERIALS, MAX_LEVEL, MIST_SURGE, MOBS, MOB_SPAWNS, NPCS, NPC_SVC, POIS, QUEST_ITEMS, RECIPES, SHOP, SIDE_QUESTS, SIDE_QUEST_BY_ID, TUNING, ZONE,
   itemCatalogue, lanternTideAt, marketDayAt, maxHpFor, mistSurgeAt, recipeOutput, sellPrice, veilPhaseAt,
   TRIAL, TRIAL_MODIFIERS, trialModifiers, trialReward,
 } from "../src/data.ts";
 import { economy, initEconomy } from "../src/economy.ts";
 import { content, contentHandle, contentLogin, initContent, isAchievementCounter, shopBuyPrice, shopSellPrice } from "../src/game/content.ts";
-import { damageMob, hurtPlayer, killMob, mobAttack } from "../src/game/combat.ts";
+import { damageMob, enrageMult, hurtPlayer, killMob, livingTwinCount, mobAttack, twinWindowLeft } from "../src/game/combat.ts";
 import { TRIAL_MOB_MARKER } from "../src/game/trial.ts";
 import { sumGear } from "../src/game/gear.ts";
 import { addItem, invQty } from "../src/game/inventory.ts";
@@ -472,6 +472,128 @@ function dataChecks() {
       if (old.cd === undefined) delete process.env.TEST_TRIAL_COOLDOWN; else process.env.TEST_TRIAL_COOLDOWN = old.cd;
     }
   })());
+  // ---- 0.5.0 P3.2: "The Twin Wardens" — a linked PAIR of bosses (ward while both live, survivor enrage, pair-kill window).
+  const twins = MOBS.twin_warden;
+  check("Twin Wardens: config — a real boss pair (ward -35%, survivor enrage +55%, 25 s together window, existing loot)", (() => {
+    const b = twins?.boss, tw = b?.twin;
+    if (!twins || !b || !tw) return false;
+    return twins.type === "twin_warden" && twins.name === "Twin Warden" && twins.hpBase > 0 && twins.hpPerLv > 0
+      && twins.leash >= 30 && twins.respawn >= 60 && b.creditRange >= 60 && b.targetRange > 0
+      && tw.wardDamageMult > 0.55 && tw.wardDamageMult < 0.75
+      && b.enrageMult >= 1.5 && b.enrageMult <= 1.6 && b.enrageAfter >= 300 // the only enrage is the bonded one
+      && tw.togetherWindowSec >= 20 && tw.togetherWindowSec <= 30
+      && tw.togetherCoin > 0 && tw.togetherJade > 0
+      && GEAR_BY_NAME.has(tw.togetherItem) // an EXISTING item on the normal loot path
+      && twins.loot.length >= 1 && twins.loot.every((l) => MATERIALS.some((m) => m.name === l.item) || GEAR_BY_NAME.has(l.item) || QUEST_ITEMS.some((q) => q.name === l.item));
+  })());
+  check("Twin Wardens: exactly a PAIR — two live bosses 6 units apart at (45,-16)/(51,-16), lv11, clear of plaza/bosses/camps/POIs/trial gate", (() => {
+    const w = new World();
+    const pair = w.mobs.filter((m) => m.def.type === "twin_warden");
+    if (pair.length !== 2) return false;
+    const a = pair[0], b = pair[1];
+    const separation = Math.hypot(a.spawnX - b.spawnX, a.spawnZ - b.spawnZ);
+    const points: Array<[number, number]> = [[a.spawnX, a.spawnZ], [b.spawnX, b.spawnZ]];
+    const bosses = ["stone_guardian", "mist_warden", "hollow_hierophant", "hollow_bride"];
+    const groupDist = (x: number, z: number, g: (typeof MOB_SPAWNS)[number]) => {
+      if (g.points) return Math.min(...g.points.map(([px, pz]) => Math.hypot(px - x, pz - z)));
+      return Math.hypot(Math.max(g.x[0] - x, 0, x - g.x[1]), Math.max(g.z[0] - z, 0, z - g.z[1]));
+    };
+    const bossGroups = MOB_SPAWNS.filter((g) => bosses.includes(g.type));
+    const camps = MOB_SPAWNS.filter((g) => !bosses.includes(g.type) && g.type !== "twin_warden");
+    return separation >= 5 && separation <= 7
+      && pair.every((m) => m.lv === 11 && !!m.boss && m.hp === m.mhp)
+      && points.every(([x, z]) => Math.abs(x) < 92 && Math.abs(z) < 92
+        && Math.hypot(x - ZONE.spawn.x, z - ZONE.spawn.z) >= 70
+        && Math.min(...bossGroups.map((g) => groupDist(x, z, g))) >= 40
+        && Math.min(...camps.map((g) => groupDist(x, z, g))) >= 14
+        && Math.min(...POIS.map((p) => Math.hypot(p.x - x, p.z - z))) >= 12
+        && Math.hypot(x - TRIAL.x, z - TRIAL.z) >= 45);
+  })());
+  check("Twin Wardens: both are proper bosses (daily asks for both, Twinbreaker seal + kill counter, boss count is 5)", (() => {
+    const daily = DAILY_POOL.find((d) => d.id === "twin_wardens");
+    const ach = ACH_BY_ID.get("twin_breaker");
+    const bossCount = (Object.keys(MOBS) as (keyof typeof MOBS)[]).filter((t) => MOBS[t].boss).length;
+    return !!twins?.boss && !!daily && daily.kind === "kill" && daily.target === "twin_warden" && daily.need === 2
+      && !!ach && ach.counter === "kill:twin_warden" && ach.need === 2 && ach.title === "Twinbreaker"
+      && isAchievementCounter("kill:twin_warden") && bossCount === 5;
+  })());
+  check("Twin Wardens: the shared ward reduces damage by 35% while BOTH are alive and disappears the moment one falls", (() => {
+    const w = new World();
+    const pair = w.mobs.filter((m) => m.def.type === "twin_warden");
+    const bot = mk(w, "sword", "TwinWardTester", 20, { x: pair[0].x - 2, z: pair[0].z });
+    const t = pair[0], other = pair[1];
+    t.threat.set(bot.p.id, 1);
+    const hp0 = t.hp;
+    damageMob(w, bot.p, t, 100, false);
+    const warded = hp0 - t.hp; // round(100 * 0.65) = 65
+    other.threat.set(bot.p.id, 1);
+    killMob(w, other, bot.p);
+    const hp1 = t.hp;
+    damageMob(w, bot.p, t, 100, false);
+    return warded === 65 && hp1 - t.hp === 100 && livingTwinCount(w) === 1 && !other.boss?.enraged;
+  })());
+  check("Twin Wardens: the survivor enrages exactly once (chat line, +55% damage multiplier, 25 s together window opens)", (() => {
+    const w = new World();
+    const pair = w.mobs.filter((m) => m.def.type === "twin_warden");
+    const bot = mk(w, "sword", "TwinEnrageTester", 20, { x: pair[0].x - 2, z: pair[0].z });
+    const [a, b] = pair;
+    a.threat.set(bot.p.id, 1);
+    killMob(w, a, bot.p);
+    const enrageLines = bot.sys.filter((t) => /is enraged — its bonded warden has fallen/i.test(t)).length;
+    const windowLeft = twinWindowLeft(w, b);
+    b.threat.set(bot.p.id, 1);
+    damageMob(w, bot.p, b, 50, false); // more fighting must not re-announce the enrage
+    w.step(); w.step();
+    const linesAfter = bot.sys.filter((t) => /is enraged — its bonded warden has fallen/i.test(t)).length;
+    return !!b.boss?.enraged && enrageLines === 1 && linesAfter === 1
+      && windowLeft > 20 && windowLeft <= twins.boss!.twin!.togetherWindowSec
+      && Math.abs(enrageMult(b) - twins.boss!.enrageMult) < 1e-9;
+  })());
+  check("Twin Wardens: together bonus pays ONLY inside the window (bonus jade + guaranteed existing item + line on the second kill)", (() => {
+    const env = process.env.TEST_MODE;
+    process.env.TEST_MODE = "1"; // deterministic loot gate so the guaranteed bonus item can be observed
+    try {
+      const twin = twins.boss!.twin!;
+      const inside = (() => {
+        const w = new World();
+        const [a, b] = w.mobs.filter((m) => m.def.type === "twin_warden");
+        const bot = mk(w, "sword", "TwinTogetherIn", 20, { x: a.x - 2, z: a.z });
+        bot.p.testDrops = true;
+        a.threat.set(bot.p.id, 1); killMob(w, a, bot.p);
+        const jade0 = economy()!.wallet(w, bot.p).jade;
+        b.threat.set(bot.p.id, 1); killMob(w, b, bot.p);
+        return {
+          jadeDelta: economy()!.wallet(w, bot.p).jade - jade0,
+          bonusLine: bot.sys.some((t) => /Together bonus!/i.test(t)),
+          item: bot.msgs.some((m) => m.t === "ev" && m.e.k === "loot" && m.e.item === twin.togetherItem),
+        };
+      })();
+      const outside = (() => {
+        const w = new World();
+        const [a, b] = w.mobs.filter((m) => m.def.type === "twin_warden");
+        const bot = mk(w, "sword", "TwinTogetherOut", 20, { x: a.x - 2, z: a.z });
+        bot.p.testDrops = true;
+        a.threat.set(bot.p.id, 1); killMob(w, a, bot.p);
+        const jade0 = economy()!.wallet(w, bot.p).jade;
+        w.time += twin.togetherWindowSec + 1; // let the window expire
+        b.threat.set(bot.p.id, 1); killMob(w, b, bot.p);
+        return { jadeDelta: economy()!.wallet(w, bot.p).jade - jade0, bonusLine: bot.sys.some((t) => /Together bonus!/i.test(t)) };
+      })();
+      return inside.bonusLine && inside.item && inside.jadeDelta === JADE.bossKill + twin.togetherJade
+        && !outside.bonusLine && outside.jadeDelta === JADE.bossKill;
+    } finally {
+      if (env === undefined) delete process.env.TEST_MODE; else process.env.TEST_MODE = env;
+    }
+  })());
+  check("Twin Wardens: the mechanics only touch the pair — another boss takes full damage and never inherits the enrage", (() => {
+    const w = new World();
+    const guardian = w.mobs.find((m) => m.def.type === "stone_guardian")!;
+    const bot = mk(w, "sword", "TwinIsolationTester", 20, { x: guardian.x - 2, z: guardian.z });
+    guardian.threat.set(bot.p.id, 1);
+    const hp0 = guardian.hp;
+    damageMob(w, bot.p, guardian, 100, false);
+    return hp0 - guardian.hp === 100 && !guardian.boss!.enraged && livingTwinCount(w) === 2;
+  })());
   // ---- 0.5.0: cultivation realms (breakthrough tiers) layered over levels.
   check("realms: ordered by minLv, the first starts at level 1, and every hpBonus is a sane, rising integer", (() => {
     const r = REALMS;
@@ -507,10 +629,10 @@ function dataChecks() {
       : d.kind === "talk" ? NPC_SVC.some((n) => n.key === d.target)
       : /* xp */ d.target === "");
   })());
-  check("daily pool: the newer content is on the board (Thorn Sprites, Ink Wisps, Wisp Essence, Mist Warden, Hollow Hierophant, Hollow Bride)", (() => {
+  check("daily pool: the newer content is on the board (Thorn Sprites, Ink Wisps, Wisp Essence, Mist Warden, Hollow Hierophant, Hollow Bride, Twin Wardens)", (() => {
     const kills = new Set(DAILY_POOL.filter((d) => d.kind === "kill").map((d) => d.target));
     const loots = new Set(DAILY_POOL.filter((d) => d.kind === "loot").map((d) => d.target));
-    return ["thorn_sprite", "ink_wisp", "mist_warden", "hollow_hierophant", "hollow_bride"].every((t) => kills.has(t)) && loots.has("Wisp Essence");
+    return ["thorn_sprite", "ink_wisp", "mist_warden", "hollow_hierophant", "hollow_bride", "twin_warden"].every((t) => kills.has(t)) && loots.has("Wisp Essence");
   })());
   check("daily pool: every boss daily pays at least as much as the best non-boss daily (coin, jade and XP)", (() => {
     const isBoss = (d: (typeof DAILY_POOL)[number]) => d.kind === "kill" && !!(MOBS[d.target as keyof typeof MOBS] as { boss?: unknown } | undefined)?.boss;

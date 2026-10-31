@@ -91,7 +91,8 @@ export interface TrialStateView {
 export type MobType = "bamboo_spirit" | "fox_spirit" | "stone_guardian" | "jade_serpent" // jade_serpent: pond/bridge mob
   | "lotus_toad" | "stone_hound" | "old_whisker" | "ink_wisp" | "mist_warden" | "thorn_sprite" // 0.4.0 content: passive spitting toad, pack-hunting hound, named rare fox; ink_wisp: floating spirit; mist_warden: second boss; thorn_sprite: passive thorn-spitting sprite
   | "hollow_hierophant" // 0.5.0 content: third boss, a hollow summoner that calls Thorn Sprites out of the reeds
-  | "hollow_bride"; // 0.5.0 content: fourth boss, a ceremonial wraith that alternates VEILED (immune) and REVEALED (vulnerable)
+  | "hollow_bride" // 0.5.0 content: fourth boss, a ceremonial wraith that alternates VEILED (immune) and REVEALED (vulnerable)
+  | "twin_warden"; // 0.5.0 P3: the Twin Wardens — a linked boss PAIR (warded while both live, survivor enrages, pair-kill bonus)
 
 export interface SkillDef {
   id: number;       // 1..4 hotbar slot

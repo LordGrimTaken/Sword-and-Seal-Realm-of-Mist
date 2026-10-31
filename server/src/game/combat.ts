@@ -1,7 +1,7 @@
 import type { GameEvent } from "../../../shared/protocol.ts";
 import { realmForLevel } from "../../../shared/protocol.ts";
-import { CLASSES, MAX_LEVEL, TUNING, attackFor, killXp, lanternTideXpMult, maxHpFor, mistSurgeMult, veilPhaseAt, xpToNext, type SkillData } from "../data.ts";
-import { ecoKill, ecoLoot, ecoXp } from "../economy.ts";
+import { CLASSES, MAX_LEVEL, TUNING, attackFor, killXp, lanternTideXpMult, maxHpFor, mistSurgeMult, veilPhaseAt, xpToNext, type SkillData, type TwinDef } from "../data.ts";
+import { ecoKill, ecoLoot, ecoXp, economy } from "../economy.ts";
 import type { Mob, Player } from "./types.ts";
 import type { World } from "./world.ts";
 import { KILL_XP_SHARE } from "./party.ts";
@@ -82,6 +82,13 @@ export function healPlayer(world: World, src: Player, dst: Player, amount: numbe
   world.emitNear(dst.x, dst.z, { k: "heal", src: src.id, dst: dst.id, amount: real });
 }
 
+/** 0.5.0 P3 The Twin Wardens: how many of the bonded pair are still standing (>=2 means the ward is up). */
+export function livingTwinCount(world: World): number {
+  let n = 0;
+  for (const o of world.mobs) if (o.def.type === "twin_warden" && o.ai !== "dead" && o.hp > 0) n++;
+  return n;
+}
+
 export function damageMob(world: World, p: Player, m: Mob, amount: number, crit: boolean, skill?: number) {
   // 0.5.0 The Hollow Bride: while VEILED she is immune to ALL damage. The strike still draws threat (so she keeps the fight)
   // and reports a zero-damage event (the client floats a 0 = "hit the veil"), but no HP is lost, so burn ticks and every other
@@ -94,6 +101,10 @@ export function damageMob(world: World, p: Player, m: Mob, amount: number, crit:
     world.emitNear(m.x, m.z, { k: "damage", src: p.id, dst: m.id, amount: 0, crit: false, skill });
     return;
   }
+  // 0.5.0 P3 The Twin Wardens: while BOTH bonded wardens stand, each takes reduced damage (the pair is a damage check, not a
+  // single-target burn). Every damage source funnels through damageMob, so this covers skills, burn ticks and boss slams.
+  const twin = m.def.boss?.twin;
+  if (twin && m.def.type === "twin_warden" && livingTwinCount(world) >= 2) amount = Math.max(1, Math.round(amount * twin.wardDamageMult));
   const dealt = Math.min(amount, m.hp);
   m.hp -= dealt;
   m.threat.set(p.id, (m.threat.get(p.id) ?? 0) + dealt);
@@ -218,7 +229,65 @@ export function killMob(world: World, m: Mob, killer: Player) {
       }
     }
   }
+  // 0.5.0 P3 The Twin Wardens: bond state machine on a death (survivor enrage + pair-kill window / together bonus).
+  const twin = m.def.boss?.twin;
+  if (twin && m.def.type === "twin_warden") twinOnDeath(world, m, twin, credited);
   if (m.def.type === "stone_guardian") world.sysAll(`${m.def.name} has been defeated by ${killer.n}!`);
+}
+
+// ---------------------------------------------------------------- 0.5.0 P3 The Twin Wardens (bond state machine)
+/** Together-window deadline per warden (set on the SURVIVOR when its partner dies; cleared when the pair is reunited). */
+const twinTogetherUntil = new WeakMap<Mob, number>();
+
+/**
+ * One half of the pair died. Two things happen, in this order:
+ *  1) if THIS warden had a together window (its partner died <= togetherWindowSec ago) the together bonus is paid to every
+ *     credited killer: coin + jade + a guaranteed existing item through the normal economy/inventory/loot paths, in addition
+ *     to the ordinary boss loot that already landed in killMob().
+ *  2) the surviving partner enrages — exactly once per death: BossDef.enrageMult applies to its damage (+55%) and bossFight
+ *     runs its patterns 25% faster while `boss.enraged` is set; a chat line announces it, and the together window opens.
+ * Exported so content.ts can drive/verify the state machine without reaching into module state.
+ */
+export function twinOnDeath(world: World, dead: Mob, twin: TwinDef, credited: ReadonlySet<number>): void {
+  const until = twinTogetherUntil.get(dead);
+  twinTogetherUntil.delete(dead);
+  if (until !== undefined && world.time <= until) {
+    for (const pid of credited) {
+      const p = world.players.get(pid);
+      if (!p) continue;
+      economy()!.addCoin(world, p, twin.togetherCoin);
+      economy()!.addJade(world, p, twin.togetherJade);
+      world.sysTo(p, `Together bonus! The Twin Wardens fall within ${twin.togetherWindowSec} s — +${twin.togetherCoin} coin, +${twin.togetherJade} jade and ${twin.togetherItem}.`);
+      const stored = addItem(world, p, twin.togetherItem, "", 1);
+      if (stored > 0) world.emitTo(p, { k: "loot", item: twin.togetherItem, itemZh: "", qty: stored });
+      else world.sysTo(p, `Your pack is full; ${twin.togetherItem} was left behind.`);
+    }
+    world.emitNear(dead.x, dead.z, { k: "chat", from: "System", text: "The Twin Wardens fall together — the bond breaks and the valley rewards the pair-kill.", sys: true });
+  }
+  const partner = world.mobs.find((o) => o !== dead && o.def.type === "twin_warden" && o.ai !== "dead" && o.hp > 0) ?? null;
+  if (!partner || !partner.boss) return;
+  if (partner.boss.enraged) return; // enrage exactly once per survivor
+  partner.boss.enraged = true;
+  partner.boss.engagedAt = world.time;
+  twinTogetherUntil.set(partner, world.time + twin.togetherWindowSec);
+  world.emitNear(partner.x, partner.z, { k: "chat", from: "System", text: `${partner.def.name} is enraged — its bonded warden has fallen! Slay it within ${twin.togetherWindowSec} s for the together bonus.`, sys: true });
+}
+
+/** The pair is reunited (one warden respawned or reset to its post): drop the bonded enrage and close the together window. */
+export function twinBondRestored(world: World, m: Mob): void {
+  twinTogetherUntil.delete(m);
+  const partner = world.mobs.find((o) => o !== m && o.def.type === "twin_warden" && o.ai !== "dead" && o.hp > 0) ?? null;
+  if (!partner?.boss || !partner.boss.enraged) return;
+  partner.boss.enraged = false;
+  partner.boss.engagedAt = world.time;
+  twinTogetherUntil.delete(partner);
+  world.emitNear(partner.x, partner.z, { k: "chat", from: "System", text: `${partner.def.name}'s bond re-forms — its partner has returned to the arena.`, sys: true });
+}
+
+/** Remaining together-window seconds for a live warden (0 = no window). Exported for tests/diagnostics. */
+export function twinWindowLeft(world: World, m: Mob): number {
+  const until = twinTogetherUntil.get(m);
+  return until === undefined ? 0 : Math.max(0, until - world.time);
 }
 
 export function killPlayer(world: World, p: Player, killerId?: number) {

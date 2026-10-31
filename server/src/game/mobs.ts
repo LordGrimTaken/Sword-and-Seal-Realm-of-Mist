@@ -1,5 +1,5 @@
 import { MOBS, MOB_SPAWNS, TUNING, ZONE, veilPhaseAt, type MobDef, type VeilPhase } from "../data.ts";
-import { applyPoison, burnTick, enrageMult, hurtPlayer, mobAttack } from "./combat.ts";
+import { applyPoison, burnTick, enrageMult, hurtPlayer, mobAttack, twinBondRestored } from "./combat.ts";
 import { telegraphContains, type GameEvent } from "../../../shared/protocol.ts";
 import type { Mob, Player } from "./types.ts";
 import type { World } from "./world.ts";
@@ -359,7 +359,7 @@ export function updateMob(world: World, m: Mob, dt: number) {
     if (now >= m.respawnAt) {
       m.x = m.spawnX; m.z = m.spawnZ; m.hp = m.mhp; m.ai = "idle"; m.st = "idle"; m.visible = true;
       m.threat.clear(); m.target = 0; m.slowUntil = 0; m.burnUntil = 0; m.windupUntil = 0;
-      if (m.boss) bossReset(world, m);
+      if (m.boss) { bossReset(world, m); if (m.def.boss!.twin) twinBondRestored(world, m); } // 0.5.0 P3: a returning Twin Warden re-forms the bond
     }
     return;
   }
@@ -394,7 +394,7 @@ export function updateMob(world: World, m: Mob, dt: number) {
       t = pickTarget(world, m);
       m.target = t ? t.id : 0;
     }
-    if (!t || dist(m.x, m.z, m.spawnX, m.spawnZ) > def.leash) { m.ai = "return"; m.target = 0; m.threat.clear(); m.windupUntil = 0; if (m.boss) bossReset(world, m); }
+    if (!t || dist(m.x, m.z, m.spawnX, m.spawnZ) > def.leash) { m.ai = "return"; m.target = 0; m.threat.clear(); m.windupUntil = 0; if (m.boss) { bossReset(world, m); if (m.def.boss!.twin) twinBondRestored(world, m); } }
     else {
       if (m.boss) {
         if (def.boss!.veil) brideFight(world, m, now); // 0.5.0 veil boss: deterministic VEILED/REVEALED rhythm (no pattern rotation)

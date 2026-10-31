@@ -184,6 +184,8 @@ export const DAILY_POOL: DailyDef[] = [
   { id: "masked_summoner", title: "The Masked Summoner", desc: "Defeat the Hollow Hierophant.", kind: "kill", target: "hollow_hierophant", need: 1, coin: 280, jade: 4, xp: 1400 },
   // 0.5.0: the fourth boss daily. Boss dailies stay at or above the best normal daily (100 coin / 1 jade / 400 XP).
   { id: "hollow_wedding", title: "The Hollow Wedding", desc: "Defeat the Hollow Bride.", kind: "kill", target: "hollow_bride", need: 1, coin: 320, jade: 4, xp: 1600 },
+  // 0.5.0 P3: the Twin Wardens daily asks for BOTH wardens (the pair is the encounter).
+  { id: "twin_wardens", title: "The Twin Wardens", desc: "Defeat both Twin Wardens.", kind: "kill", target: "twin_warden", need: 2, coin: 340, jade: 4, xp: 1700 },
 ];
 
 // ---------------- Classes & skills ----------------
@@ -280,6 +282,20 @@ export interface BossDef {
   /** 0.5.0 The Hollow Bride: a deterministic VEILED/REVEALED rhythm instead of (or in front of) the pattern rotation.
    *  The phase is derived from `world.time - boss.engagedAt`, so the state machine stores no extra per-mob data. */
   veil?: VeilDef;
+  /** 0.5.0 P3 The Twin Wardens: the linked-pair mechanic (shared ward while both live, survivor enrage, pair-kill bonus). */
+  twin?: TwinDef;
+}
+
+/** 0.5.0 P3 The Twin Wardens: TWO bosses that are stronger together. While BOTH live each takes `wardDamageMult` damage
+ *  (-35% by default); when one dies the survivor's BossDef.enrageMult applies (+55%) and its pattern cadence drops to 75%,
+ *  and a `togetherWindowSec` window opens: killing the survivor inside it pays the together bonus (coin + jade + an existing
+ *  rare item through the normal loot path). Natural `enrageAfter` is pushed far out so the only enrage is the bonded one. */
+export interface TwinDef {
+  wardDamageMult: number;     // damage-taken multiplier while both wardens are alive (0.65 = -35%)
+  togetherWindowSec: number;  // kill the survivor within this many seconds of its partner for the together bonus
+  togetherCoin: number;       // bonus coin per credited killer on a together kill
+  togetherJade: number;       // bonus jade per credited killer on a together kill
+  togetherItem: string;       // an EXISTING item, granted through the normal inventory/loot path on a together kill
 }
 
 /** VEILED/REVEALED rhythm for a veil boss (data-driven; see veilPhaseAt). While VEILED the boss is immune to all damage and
@@ -474,6 +490,30 @@ export const MOBS: Record<MobType, MobDef> = {
       veil: { veilSec: 8, revealSec: 5, lashEvery: 2.6, firstLash: 1.4, revealDmgMult: 1.5, driftSpeedMult: 0.55 },
     },
   },
+  // 0.5.0 P3 The Twin Wardens: a linked PAIR of bosses on the eastern rise — two spawn points 6 units apart at (45,-16) and
+  // (51,-16). While both live each takes 35% less damage; when one falls the survivor enrages (+55% damage, pattern cadence
+  // x0.75) and a 25 s window opens: kill the second inside it for bonus coin/jade and a guaranteed existing rare charm.
+  // Both use the generic pattern rotation, so respawn/leash/reset/credit all behave like every other boss. lv11.
+  twin_warden: {
+    type: "twin_warden", name: "Twin Warden", hpBase: 760, hpPerLv: 120, dmgBase: 20, dmgPerLv: 1.0,
+    speed: 3.3, aggro: 13, leash: 44, wander: 3, attackRange: 4.2, attackCd: 2.4, respawn: 180, xpPerLv: 250,
+    loot: [
+      { item: "Guardian Core", itemZh: "", chance: 1, min: 1, max: 1 },
+      { item: "Serpent Gall", itemZh: "", chance: 1, min: 1, max: 2 },
+      { item: "Warden's Seal Charm", itemZh: "", chance: 0.1, min: 1, max: 1 }, // the same rare charm the warden's quest yields
+    ],
+    boss: {
+      slamEvery: [7.5, 9], slamEvery2: 7, firstSlam: 3,
+      phase2At: 0.55,
+      slam: { radius: 6.5, delay: 1.6, dmg: 66 },
+      stomp: { radius: 7.5, delay: 1.5, dmg: 58 },
+      scatter: { radius: 4, delay: 1.8, dmg: 42, n: 3, spread: 8.5 },
+      phase3At: 0.27,
+      beam: { len: 24, width: 2.6, lead: 0.9, sweepTime: 2.6, sweep: Math.PI / 2, tickEvery: 0.32, dmg: 20 },
+      enrageAfter: 600, enrageMult: 1.55, creditRange: 72, targetRange: 40, // natural enrage is effectively out of reach: the bond enrage is the mechanic
+      twin: { wardDamageMult: 0.65, togetherWindowSec: 25, togetherCoin: 200, togetherJade: 2, togetherItem: "Warden's Seal Charm" },
+    },
+  },
 };
 
 export interface SpawnGroup {
@@ -509,6 +549,11 @@ export const MOB_SPAWNS: SpawnGroup[] = [
   // (the fox hills group, which is spread over a 50x60 box) and 43 from the Fox Fire Hollow POI. Terrain there is
   // flat and low (heightAt 0.35), so the 5 s REVEALED burst window is fought on open ground.
   { type: "hollow_bride", count: 1, x: [0, 0], z: [0, 0], lv: [12, 12], points: [[96, 62]] },                                                       // fourth boss, the Hollow Bride
+  // 0.5.0 P3: The Twin Wardens arena — the linked pair sits 6 units apart on the eastern rise at (45,-16) and (51,-16):
+  // 78 / 82 from the plaza spawn, 44.9-46.5 from the nearest other boss arena (Mist Warden) and >=100 from the rest,
+  // 53-58 from the Hollow Trial gate, 16 from the nearest mob-spawn box, 12.5+ from the nearest POI (Serpent's Rest);
+  // flat ground (heightAt -0.7, slope 0.06-0.08). The pair never respawns alone: each warden has its own 180 s timer.
+  { type: "twin_warden", count: 2, x: [0, 0], z: [0, 0], lv: [11, 11], points: [[45, -16], [51, -16]] },                                             // fifth boss: the Twin Wardens (a pair)
 ];
 
 /** Inventory limits. */
@@ -1052,6 +1097,8 @@ export const ACHIEVEMENTS: AchDef[] = [
   { id: "adorned", name: "The Adorned", desc: "Wear rare or epic gear in four slots at once.", cat: "Craft", pts: 15, counter: "rare", need: new Set(GEAR.filter((g) => g.rarity === "rare" || g.rarity === "epic").map((g) => g.slot)).size, title: "The Adorned" },
   { id: "thornweave_adept", name: "Thornweave Adept", desc: "Wear all three Thornweave pieces at once.", cat: "Craft", pts: 10, counter: "set:thornweave", need: Object.values(GEAR_SET_OF).filter((s) => s === "thornweave").length, title: "Thornweave Adept" },
   { id: "set_collector", name: "Set Collector", desc: "Wear every piece of any one equipment set at once.", cat: "Craft", pts: 5, counter: "setsDone", need: 1 },
+  // 0.5.0 P3: both linked wardens fall -> the pair seal (counter kill:twin_warden is produced by the normal kill hook).
+  { id: "twin_breaker", name: "Twinbreaker", desc: "Defeat both Twin Wardens.", cat: "Combat", pts: 20, counter: "kill:twin_warden", need: 2, title: "Twinbreaker" },
   { id: "side_all", name: "Friend of the Valley", desc: "Finish every side quest.", cat: "Story", pts: 25, counter: "quest", need: SIDE_QUESTS.length, title: "Friend of the Valley" },
   { id: "nascent_soul", name: "Nascent Soul", desc: "Reach level 15, the Nascent Soul realm.", cat: "Story", pts: 15, counter: "lv", need: 15, title: "Nascent Soul" },
 ];

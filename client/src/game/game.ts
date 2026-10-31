@@ -745,9 +745,10 @@ export class Game {
   }
 
   /** The boss entity worth a health bar: targeted, or alive within 40 units. */
-  /** The boss whose HP bar is shown: only one at a time. 0.5.0 adds the Hollow Bride beside the Stone Guardian;
-   *  Warden/Hierophant are unchanged (they deliberately still use the target frame only). */
-  private static readonly BOSS_BAR_TYPES: ReadonlySet<string> = new Set(["stone_guardian", "hollow_bride"]);
+  /** The boss whose HP bar is shown: only one at a time. 0.5.0 adds the Hollow Bride and the linked Twin Wardens beside the
+   *  Stone Guardian; Warden/Hierophant are unchanged (they deliberately still use the target frame only). For the twin PAIR the
+   *  bar follows the selected/nearest warden — one bar at a time, and the survivor's bar stays once its partner falls. */
+  private static readonly BOSS_BAR_TYPES: ReadonlySet<string> = new Set(["stone_guardian", "hollow_bride", "twin_warden"]);
   private bossEnt(): Ent | null {
     const t = this.ents.map.get(this.targetId);
     if (t && t.s.mob && Game.BOSS_BAR_TYPES.has(t.s.mob) && !t.dead) return t;

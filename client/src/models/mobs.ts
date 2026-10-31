@@ -649,6 +649,110 @@ function hollowBride(): Avatar & { setVeiled: (v: boolean) => void } {
   };
 }
 
+// ======================== The Twin Wardens (fifth boss, a linked pair) ========================
+/** A mirrored stone warden: two fused upper bodies sharing one robed base — a jade half and an ash half, twin horned masks,
+ *  a chain strung between the two outer wrists and a glowing bond sigil on the shared chest. Deliberately unlike the other
+ *  bosses: the silhouette reads as ONE body with two heads/halves, which is the encounter's theme. No optional hooks are
+ *  needed (the bond is enforced server-side); the model just needs to animate walk/slam/death like any avatar. */
+function twinWarden(): Avatar {
+  const root = new THREE.Group();
+  const body = node(); body.scale.setScalar(0.9); root.add(body);
+  root.add(shadowBlob(2.7));
+  const jade = hx(PAL.jade, PAL.inkSoft, 0.42), jadeD = hx(PAL.jade, PAL.ink, 0.32);
+  const ash = hx(PAL.mist, PAL.inkSoft, 0.55), ashD = hx(PAL.inkSoft, PAL.ink, 0.3);
+  const gold = PAL.gold, pale = hx(PAL.paper, PAL.inkSoft, 0.25);
+  const RUNE = 0x8fe0c0;
+
+  // ---- shared lower body: a heavy flared robe on four stubby feet (one base for both halves)
+  const base = node(); base.position.y = 0.15; body.add(base);
+  add(base, part(new THREE.CylinderGeometry(1.05, 1.35, 0.9, 8), ash, 0.04), 0, 0.45, 0);
+  add(base, part(new THREE.TorusGeometry(1.12, 0.07, 5, 12), gold, 0.02), 0, 0.5, 0).rotation.x = Math.PI / 2;
+  for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + Math.PI / 4; const foot = part(new THREE.BoxGeometry(0.42, 0.35, 0.7), ashD, 0.03); foot.position.set(Math.sin(a) * 0.85, 0.18, Math.cos(a) * 0.85); foot.rotation.y = a; base.add(foot); }
+  for (let i = 0; i < 3; i++) { const b = part(new THREE.BoxGeometry(1.5 - i * 0.18, 0.12, 1.5 - i * 0.18), i % 2 ? ashD : ash, 0.03); add(base, b, 0, 0.18 + i * 0.24, 0); }
+  for (const s of [-1, 1]) add(base, glowPart(new THREE.BoxGeometry(0.07, 0.5, 0.07), RUNE, 0.8), s * 0.62, 0.5, 0.9);
+
+  // ---- twin torso halves, mirrored about the spine: left jade, right ash
+  const halves = [1, -1].map((s) => {
+    const h = node(); h.position.set(s * 0.42, 1.55, 0); body.add(h);
+    const c = s > 0 ? jade : ash, cd = s > 0 ? jadeD : ashD;
+    add(h, part(new THREE.CylinderGeometry(0.46, 0.62, 0.95, 7), c, 0.03), 0, 0.45, 0);
+    add(h, part(new THREE.CylinderGeometry(0.36, 0.48, 0.5, 7), cd, 0.03), 0, 1.12, 0);
+    // mask head: horned half-mask, one glowing eye each; the two faces look slightly outward
+    const head = node(); head.position.set(0, 1.6, 0); h.add(head);
+    add(head, part(new THREE.SphereGeometry(0.3, 10, 8), pale, 0.025), 0, 0, 0);
+    add(head, part(new THREE.BoxGeometry(0.3, 0.34, 0.2), cd, 0.02), s * 0.12, -0.02, 0.16);
+    add(head, glowPart(new THREE.SphereGeometry(0.06, 8, 6), s > 0 ? RUNE : 0xffcf8a), s * 0.1, 0.03, 0.28);
+    for (let k = 0; k < 2; k++) { const horn = part(new THREE.ConeGeometry(0.09, 0.55 - k * 0.12, 5), pale, 0.02); horn.rotation.z = s * (0.35 + k * 0.35); horn.rotation.x = -0.2 + k * 0.3; add(head, horn, s * (0.12 + k * 0.14), 0.3 - k * 0.05, -0.02); }
+    // shoulder + arm with a rune band and a chain cuff
+    const sh = node(); sh.position.set(s * 0.5, 1.05, 0); h.add(sh);
+    add(sh, part(new THREE.SphereGeometry(0.34, 9, 7), c, 0.03), 0, 0, 0);
+    const elbow = node(); elbow.position.y = -0.55; sh.add(elbow);
+    add(elbow, part(new THREE.CylinderGeometry(0.2, 0.26, 0.8, 7), cd, 0.025), 0, -0.3, 0);
+    add(elbow, glowPart(new THREE.TorusGeometry(0.24, 0.04, 5, 10), RUNE, 0.9), 0, -0.62, 0).rotation.x = Math.PI / 2;
+    const fist = node(); fist.position.y = -0.75; elbow.add(fist);
+    add(fist, part(new THREE.BoxGeometry(0.34, 0.3, 0.34), c, 0.03), 0, -0.1, 0);
+    return { h, head, sh, elbow, fist, side: s };
+  });
+
+  // ---- the bond: a chain slung between the two outer fists and a shared sigil on the sternum
+  const chain: THREE.Object3D[] = [];
+  for (let i = 0; i < 5; i++) {
+    const link = node(); link.position.set(0, 1.35 - Math.sin((i / 4) * Math.PI) * 0.32, 0.42);
+    const tor = part(new THREE.TorusGeometry(0.1, 0.03, 4, 8), gold, 0.01); tor.rotation.x = i % 2 ? Math.PI / 2 : 0; link.add(tor);
+    body.add(link); chain.push(link);
+  }
+  const coreMat = new THREE.MeshBasicMaterial({ map: symbolTexture("rune", 256, "#8fe0c0", "#d8fff0").tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false });
+  const core = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), coreMat); core.position.set(0, 1.55, 0.55); body.add(core);
+  const ring = part(new THREE.TorusGeometry(0.55, 0.035, 4, 14), gold, 0.01); ring.position.set(0, 1.55, 0.42); body.add(ring);
+
+  const hnd = bake(root, 0.28);
+  const an = new Anim(); const dis = new Dissolve(root);
+  const shadow = root.children.find((c) => c.name === "shadow");
+  return {
+    root, height: 4.9,
+    setState(st: AvState) {
+      if (st !== "dead" && an.state === "dead") { dis.end(); root.visible = true; if (shadow) shadow.visible = true; body.rotation.set(0, 0, 0); body.position.set(0, 0, 0); hnd.glow.value = 1; core.visible = true; }
+      an.setState(st);
+    },
+    update(dt: number) {
+      an.tick(dt);
+      const t = an.t, m = an.move, k = an.atk;
+      if (an.state === "dead") {
+        const d = ease(an.dead);
+        body.rotation.z = 0.5 * d; body.rotation.x = 0.4 * d; body.position.y = -0.7 * d;
+        halves.forEach((h, i) => { h.sh.rotation.z = -h.side * (0.4 + i * 0.2) * d; h.head.rotation.z = h.side * 0.35 * d; });
+        hnd.glow.value = 1 - d; coreMat.opacity = 1 - d; core.visible = d < 0.95;
+        const f = clamp01((an.stateT - 1.0) / 1.2);
+        if (f > 0) { dis.begin(); dis.set(1 - f); } else dis.end();
+        if (shadow) shadow.visible = f < 0.9;
+        root.visible = f < 1;
+        return;
+      }
+      const breath = 0.5 + 0.5 * Math.sin(t * 1.6);
+      hnd.glow.value = 0.6 + 0.4 * breath + 0.3 * k;
+      coreMat.opacity = 0.55 + 0.3 * breath + 0.2 * k;
+      core.rotation.z = t * 0.5 * (1 + 0.3 * k);
+      ring.rotation.z = -t * 0.35;
+      const ph = t * 4.4;
+      body.position.y = Math.abs(Math.sin(ph)) * 0.12 * m + Math.sin(t * 1.2) * 0.015;
+      body.rotation.z = Math.sin(ph) * 0.03 * m;
+      halves.forEach((h, i) => {
+        const dir = i === 0 ? 1 : -1;
+        h.h.rotation.y = Math.sin(t * 0.7 + i * 1.7) * 0.06;
+        h.head.rotation.y = dir * (0.25 + Math.sin(t * 0.5 + i) * 0.15) * (1 - k);
+        const raise = ease(clamp01((an.stateT % 1.35) / 0.5)), slam = ease(clamp01(((an.stateT % 1.35) - 0.5) / 0.16));
+        h.sh.rotation.x = -(1.4 * raise * (1 - slam) - 0.25 * slam) * k + Math.sin(ph + i) * 0.08 * m;
+        h.sh.rotation.z = dir * (0.15 + 0.5 * raise * (1 - slam)) * k;
+        h.elbow.rotation.x = (-0.3 - 0.9 * raise * (1 - slam)) * k;
+        h.h.rotation.x = (-0.1 + 0.25 * slam * (1 - ease(clamp01(((an.stateT % 1.35) - 0.66) / 0.34)))) * k;
+      });
+      chain.forEach((link, i) => { link.position.y = 1.35 - Math.sin((i / 4) * Math.PI) * 0.32 + Math.sin(t * 2.1 + i * 0.8) * 0.035; link.rotation.y = Math.sin(t * 1.4 + i) * 0.2; });
+      const kk = 0.9 + 0.1 * Math.sin(t * 2.2);
+      core.scale.set(kk, kk, 1);
+    },
+  };
+}
+
 export function buildMob(type: string): Avatar {
   switch (type) {
     case "bamboo_spirit": return bambooSpirit();
@@ -661,6 +765,7 @@ export function buildMob(type: string): Avatar {
     case "mist_warden": return stoneGuardian();
     case "hollow_hierophant": return stoneGuardian(); // 0.5.0 third boss: reuses the carved colossus until it gets its own model
     case "hollow_bride": return hollowBride(); // 0.5.0 fourth boss: veiled wraith with its own model + setVeiled hook
+    case "twin_warden": return twinWarden(); // 0.5.0 P3 fifth boss: the linked pair (two fused halves, one shared body)
     case "thorn_sprite": return foxSpirit();
     default: return stoneGuardian();
   }
