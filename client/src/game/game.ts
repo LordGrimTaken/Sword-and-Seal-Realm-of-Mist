@@ -115,6 +115,8 @@ export class Game {
   private cls: ClassId;
   private skills: SkillDef[];
   private zone: ZoneInfo;
+  /** named region inside the world (valley or the Sunken Hall) — drives the HUD zone label */
+  private region: "hall" | "valley" = "valley";
   private targetId = -1;
   private ring: TargetRing;
   private juice = new Juice();
@@ -292,6 +294,7 @@ export class Game {
       onPatchNotes: () => this.whatsNew?.open(),
     });
     this.hud.setZone(this.zone);
+    this.hud.setRegion(plain(this.zone.name));
     this.hud.setSkills(this.skills, this.cls);
     // 0.5.0 treasure caches: fixed spots from the `chests` message, a procedural model each, plus the F prompt
     this.chests = new ChestField(this.scene, (x, z) => this.world.heightAt(x, z), this.hud.root);
@@ -365,6 +368,8 @@ export class Game {
     this.pred.reset(this.zone.spawn.x, this.zone.spawn.z);
     this.pred.ready = false;
     this.hud.resetSession();
+    this.region = "valley";
+    this.hud.setRegion(plain(this.zone.name));
     this.hud.setSkills(this.skills, this.cls);
     this.hud.hideConnection();
     this.hud.addChat("", "Reconnected to the valley.", true, false);
@@ -1082,6 +1087,22 @@ export class Game {
     return wantMove;
   }
 
+  /** Cheap region readout (one rect test on the local player): relabel the HUD and announce the transition once. */
+  private updateRegion() {
+    const region = this.world.regionAt(this.vis.x, this.vis.z);
+    if (region === this.region) return;
+    this.region = region;
+    if (region === "hall") {
+      this.hud.setRegion("The Sunken Hall");
+      this.hud.announceRegion("The Sunken Hall", "A drowned court in the north-west");
+      this.hud.addChat("", "You enter the Sunken Hall.", true, false);
+    } else {
+      this.hud.setRegion(plain(this.zone.name));
+      this.hud.announceRegion(plain(this.zone.name), "Cloudmist Valley");
+      this.hud.addChat("", "You leave the Sunken Hall. The valley opens out around you.", true, false);
+    }
+  }
+
   private frame(dt: number, now: number) {
     const me = this.ents.map.get(this.myId);
     const dead = !!me && me.dead;
@@ -1123,6 +1144,7 @@ export class Game {
     // ---- world / vfx
     this.world.focus([{ x: this.vis.x, z: this.vis.z }]); // pond ripples / koi shy from the wading player (art hook)
     this.world.update(dt, this.camera.position);
+    this.updateRegion();
     this.content.frame();
     this.vfx.update(adt);
     this.rollFx.update(adt);

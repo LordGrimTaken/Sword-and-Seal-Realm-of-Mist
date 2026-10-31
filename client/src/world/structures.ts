@@ -8,6 +8,7 @@ import { BRIDGE, PLAZA, bridgeY, pathX, terrainHeight } from "./terrain";
 import { PAL, hex, toonGradient } from "./toon";
 import { BANNER_CELL, Signage } from "./signage";
 import { poiMarkers } from "./poi";
+import { buildSunkenHall } from "./hall";
 
 const C = {
   wood: hex(PAL.vermilion, PAL.ink, 0.3),
@@ -657,6 +658,7 @@ export function buildStructures(): StructureOut {
   bridge(b, lanterns);
   shrine(b, lanterns, group, smokes, rays);
   drownedShrine(b);
+  buildSunkenHall(b, lanterns, smokes); // P3: the Sunken Hall (second region) — geometry joins this batch, no new draw calls
   wardenStones(b);
   plazaDecor(b, smokes);
   poiMarkers(b, lanterns);

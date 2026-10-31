@@ -554,6 +554,13 @@ export const MOB_SPAWNS: SpawnGroup[] = [
   // 53-58 from the Hollow Trial gate, 16 from the nearest mob-spawn box, 12.5+ from the nearest POI (Serpent's Rest);
   // flat ground (heightAt -0.7, slope 0.06-0.08). The pair never respawns alone: each warden has its own 180 s timer.
   { type: "twin_warden", count: 2, x: [0, 0], z: [0, 0], lv: [11, 11], points: [[45, -16], [51, -16]] },                                             // fifth boss: the Twin Wardens (a pair)
+  // 0.7.0 P3: "The Sunken Hall", the valley's second named region — two higher-level camps inside the walled court.
+  // Client bounds (client/src/world/hall.ts): interior x[-81,-65] z[35.5,44.5], centre (-73,40), one south gate at
+  // (-70,35.5). Points sit >= 2 from the walls and clear of the altar dais (x -75.8..-70.2, z 37.8..42.2), the ink
+  // pool (x -76..-70, z 41.9..43.9) and the gate runner; the nearest existing camp is >= 4 from the interior rect.
+  // Appended last so the seeded placement of every older group is unchanged.
+  { type: "stone_hound", count: 3, x: [0, 0], z: [0, 0], lv: [12, 13], points: [[-78.4, 38.2], [-79.0, 42.0], [-76.0, 41.2]] }, // the hall's hound pack, west court
+  { type: "ink_wisp", count: 3, x: [0, 0], z: [0, 0], lv: [13, 14], points: [[-67.6, 38.6], [-67.6, 42.0], [-70.2, 40.2]] },    // cold wisps over the flooded east court
 ];
 
 /** Inventory limits. */
@@ -901,6 +908,8 @@ export const POIS: PoiDef[] = [
   { id: "fox_fire_hollow", name: "Fox Fire Hollow", x: 62, z: 36, r: POI_RADIUS, xp: 60, lore: "Blue flames dance without fuel. The foxes of the hills gather here when the moon is thin." },
   { id: "hound_cairn", name: "Hound Ridge Cairn", x: -22, z: 52, r: POI_RADIUS, xp: 60, lore: "Stacked stones, one for every traveller the hounds have turned back." },
   { id: "mist_overlook", name: "Cloudmist Overlook", x: 82, z: -62, r: POI_RADIUS, xp: 80, lore: "From here the whole valley lies below, a bowl of white mist with the pagoda's roof floating on it." },
+  // 0.7.0 P3: the second region gets its own atlas entry (server-tracked discovery; the hall's own art lives in the client).
+  { id: "sunken_hall", name: "The Sunken Hall", x: -73, z: 40, r: POI_RADIUS, xp: 80, lore: "A walled court half-sunk in the north-west meadow, its broken gate open and its braziers still burning. The valley keeps one of its old wards here." },
 ];
 
 // ---------------- Side quests (NPC chains) ----------------

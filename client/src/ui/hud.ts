@@ -296,6 +296,20 @@ export class Hud {
     this.zone.classList.add("show");
   }
 
+  /** Region readout under the banner (e.g. "The Sunken Hall" inside its walls): text only, and only on change. */
+  setRegion(name: string) {
+    if (this.zoneLabel.textContent !== name) this.zoneLabel.textContent = name;
+  }
+
+  /** One-time region announcement: reuse the zone-entrance banner with a subtitle. */
+  announceRegion(name: string, sub: string) {
+    $(this.zone, ".big").textContent = name;
+    $(this.zone, ".small").textContent = sub;
+    this.zone.classList.remove("show");
+    void this.zone.offsetWidth;
+    this.zone.classList.add("show");
+  }
+
   setSkills(skills: SkillDef[], cls: ClassId) {
     this.cls = cls;
     const wrap = $(this.root, "#hotbar .slots");

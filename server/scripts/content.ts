@@ -131,6 +131,31 @@ function dataChecks() {
   check("every quest giver exists in the world and the NPCs do not overlap", NPC_SVC.every((n) => NPCS.some((x) => x.name === n.name)) && NPCS.every((a, i) => NPCS.every((b, j) => i >= j || Math.hypot(a.x - b.x, a.z - b.z) > 2.5)));
   check("places of interest are inside the world, apart from each other, and at least 40 units from the plaza", POIS.every((a, i) => Math.abs(a.x) < 99 && Math.abs(a.z) < 99 && Math.hypot(a.x - ZONE.spawn.x, a.z - ZONE.spawn.z) > 40 && POIS.every((b, j) => i >= j || Math.hypot(a.x - b.x, a.z - b.z) > 12)));
   check("new mob groups spawn outside the plaza safe radius and every definition has a spawn", ["lotus_toad", "stone_hound", "old_whisker", "ink_wisp", "mist_warden", "thorn_sprite", "hollow_hierophant", "hollow_bride"].every((t) => MOB_SPAWNS.some((g) => g.type === t)));
+  // ---- 0.7.0 P3: the Sunken Hall, the valley's second named region. The bounds are mirrored from client/src/world/hall.ts;
+  // a client change that moves the walls must move these spawn points/POI with them or these checks fail.
+  check("P3 Sunken Hall: two higher-level camps stand inside the court on existing mob types, clear of walls/altar/pool/gate", (() => {
+    const H = { x0: -81, x1: -65, z0: 35.5, z1: 44.5, gateX: -70, gateZ: 35.5 };
+    const altar = { x0: -75.8, x1: -70.2, z0: 37.8, z1: 42.2 };
+    const pool = { x0: -76, x1: -70, z0: 41.9, z1: 43.9 };
+    const camps = MOB_SPAWNS.filter((g) => !!g.points && g.points.length === 3 && g.lv[0] >= 12 && g.lv[1] <= 14
+      && g.points.every(([x, z]) => x >= H.x0 - 1 && x <= H.x1 + 1 && z >= H.z0 - 1 && z <= H.z1 + 1));
+    if (camps.length !== 2 || camps.map((g) => g.type).sort().join() !== "ink_wisp,stone_hound") return false;
+    const inside = (x: number, z: number) => x >= H.x0 + 2 && x <= H.x1 - 2 && z >= H.z0 + 2 && z <= H.z1 - 2;
+    const inRect = (r: { x0: number; x1: number; z0: number; z1: number }, x: number, z: number) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1;
+    return camps.every((g) => !!MOBS[g.type] && !MOBS[g.type].boss && g.count >= 2 && g.count <= 4 && g.lv[0] <= g.lv[1])
+      && camps.every((g) => g.points!.every(([x, z], i) => inside(x, z) && !inRect(altar, x, z) && !inRect(pool, x, z)
+        && Math.hypot(x - H.gateX, z - H.gateZ) >= 3.5
+        && g.points!.every(([x2, z2], j) => i === j || Math.hypot(x - x2, z - z2) >= 3.0)));
+  })());
+  check("P3 Sunken Hall: its atlas place of interest sits inside the hall and clear of the other places", (() => {
+    const poi = POIS.find((p) => p.id === "sunken_hall");
+    if (!poi) return false;
+    const H = { x0: -81, x1: -65, z0: 35.5, z1: 44.5 };
+    return poi.x > H.x0 + 2 && poi.x < H.x1 - 2 && poi.z > H.z0 + 2 && poi.z < H.z1 - 2
+      && poi.xp > 0 && poi.lore.length > 20
+      && POIS.filter((p) => p !== poi).every((p) => Math.hypot(p.x - poi.x, p.z - poi.z) > 12)
+      && Math.hypot(poi.x - ZONE.spawn.x, poi.z - ZONE.spawn.z) > 40;
+  })());
   // ---- 0.6.0: the expanded merit-seal collection. Every seal must reference a counter the server really produces
   // (checked through the game module's own registry), and the collection must stay unique, balanced and titled.
   check("merit seals: unique ids, valid categories, sane points/needs, and every counter is really produced", (() => {
@@ -967,7 +992,7 @@ function meritChecks() {
   goto(w, p, poi.x, poi.z + 1); for (let i = 0; i < 12; i++) w.step();
   check("a place is only discovered once", b.msgs.filter((m) => m.t === "toast" && m.kind === "poi").length === n);
   for (const q of POIS) { goto(w, p, q.x, q.z); for (let i = 0; i < 12; i++) w.step(); }
-  check("all six places -> Cartographer, with its title", p.cx!.merits.has("cartographer") && p.cx!.merits.has("wanderer") && p.cx!.titles.has("Cartographer"));
+  check("every place -> Cartographer, with its title", p.cx!.merits.has("cartographer") && p.cx!.merits.has("wanderer") && p.cx!.titles.has("Cartographer"));
   const prog = last(b, "prog")!;
   check("the prog message lists every merit with progress, the points total and the places found", prog.ach.length === ACHIEVEMENTS.length && prog.pts >= 30 && prog.pois.every((x) => x.found && typeof x.x === "number"));
   const fresh = mk(w, "sword", "Blank");
@@ -990,7 +1015,7 @@ function meritChecks() {
   w.removePlayer(p);
   const b2 = mk(w, "physician", "Explorer", 5);
   const p2 = b2.p;
-  check("merits, places and titles survive a relog", p2.cx!.merits.size === cx.merits.size && p2.cx!.pois.size === 6 && p2.cx!.titles.has("Cartographer"));
+  check("merits, places and titles survive a relog", p2.cx!.merits.size === cx.merits.size && p2.cx!.pois.size === POIS.length && p2.cx!.titles.has("Cartographer"));
   check("the persisted counters survive too (kills)", (p2.cx!.counters.get("kill:bamboo_spirit") ?? 0) === 1);
   void content;
 }

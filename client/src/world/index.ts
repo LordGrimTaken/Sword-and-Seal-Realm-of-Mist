@@ -13,6 +13,8 @@ import { PAL, hex } from "./toon";
 import { buildKoi } from "./koi";
 import { createDayNight } from "./daynight";
 import { updateWind } from "./wind";
+import { buildHallAir, inSunkenHall, sunkenHallInfluence, HALL_FOG, HALL_LIGHT } from "./hall";
+import { settings } from "../ui/settings";
 
 export { heightAt };
 
@@ -21,6 +23,8 @@ export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): 
   /** local player (and optionally others) so the pond can ripple around anyone wading and the koi can shy away */
   focus(actors: { x: number; z: number }[]): void;
   heightAt(x: number, z: number): number;
+  /** which named region of the world a point is in (rect test, no allocation) — the HUD zone label uses this */
+  regionAt(x: number, z: number): "hall" | "valley";
 } {
   const root = new THREE.Group();
   root.name = "jiuzhou-world";
@@ -48,7 +52,8 @@ export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): 
   const koi = buildKoi();
   const ambient = buildAmbient(structures.lanterns, { smokes: structures.smokes, rays: structures.rays });
   const weather = buildWeather();
-  root.add(terrain, buildGround(), structures.group, veg.group, water.mesh, koi.mesh, ambient.group, cranes.mesh, weather.group);
+  const hallAir = buildHallAir();
+  root.add(terrain, buildGround(), structures.group, veg.group, water.mesh, koi.mesh, ambient.group, cranes.mesh, weather.group, hallAir.group);
 
   const dayNight = createDayNight({
     scene, hemi, sun, sky, mountains: mountains.group,
@@ -85,6 +90,7 @@ export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): 
 
   return {
     heightAt,
+    regionAt(x, z) { return inSunkenHall(x, z) ? "hall" : "valley"; },
     focus(actors) { waders = actors; },
     update(dt: number, camPos: THREE.Vector3) {
       time += dt;
@@ -112,6 +118,15 @@ export function createWorld(scene: THREE.Scene, renderer: THREE.WebGLRenderer): 
       renderer.getDrawingBufferSize(size);
       weather.update(time, dt, camPos, dayNight.tone);
       ambient.update(time, camPos, size.y, weather.mist);
+      // P3: the Sunken Hall is the valley's second region — inside it the fog, hemisphere and key light cool
+      // and darken a little. The base colour still comes from the day/night tone, and weather keeps its own mist.
+      const hallIn = sunkenHallInfluence(camPos.x, camPos.z);
+      hallAir.update(time, hallIn, settings.get().reduceMotion);
+      const dayTone = dayNight.tone, fog = scene.fog as THREE.Fog;
+      fog.color.copy(dayTone.horizon).lerp(HALL_FOG, 0.55 * hallIn);
+      hemi.color.copy(dayTone.hemiSky).lerp(HALL_LIGHT, 0.35 * hallIn);
+      hemi.groundColor.copy(dayTone.hemiGround).lerp(HALL_FOG, 0.3 * hallIn);
+      sun.color.copy(dayTone.sunCol).lerp(HALL_LIGHT, 0.25 * hallIn);
     },
   };
 }
